@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual envs
+.venv/
+venv/
+.python-version
+
+# Test / cache
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Databricks CLI / DAB local state
+.databricks/
+.build/
+
+# Uploaded data / local secrets
+.env
+.env.*
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store

@@ -1,0 +1,15 @@
+command: ["python", "-m", "app.main"]
+
+env:
+  - name: PROSPECTORPRO_CATALOG
+    value: att_log_anomaly_catalog
+  - name: PROSPECTORPRO_SCHEMA
+    value: prospector_pro
+  - name: PROSPECTORPRO_VOLUME
+    value: ProspectorPro_uploads
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: warehouse
+  - name: PROSPECTORPRO_LAKEBASE_INSTANCE
+    value: prospectorpro
+  - name: PROSPECTORPRO_PIPELINE_JOB_ID
+    valueFrom: pipeline-job

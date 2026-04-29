@@ -1,0 +1,20 @@
+resources:
+  apps:
+    ProspectorPro_app:
+      name: prospectorpro
+      description: ProspectorPro — Telco marketing campaign platform
+      source_code_path: ${workspace.file_path}
+      resources:
+        - name: warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+        - name: lakebase
+          database:
+            instance_name: ${var.lakebase_instance}
+            database_name: databricks_postgres
+            permission: CAN_CONNECT_AND_CREATE
+        - name: pipeline-job
+          job:
+            id: ${resources.jobs.ProspectorPro_pipeline_runner.id}
+            permission: CAN_MANAGE_RUN

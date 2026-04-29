@@ -1,0 +1,14 @@
+resources:
+  schemas:
+    ProspectorPro_schema:
+      catalog_name: ${var.catalog}
+      name: ${var.schema}
+      comment: ProspectorPro demo schema (managed by DAB)
+
+  volumes:
+    ProspectorPro_uploads:
+      catalog_name: ${var.catalog}
+      schema_name: ${var.schema}
+      name: ProspectorPro_uploads
+      volume_type: MANAGED
+      comment: CSV/XLSX dropzone for campaign source files

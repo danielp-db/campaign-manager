@@ -1,0 +1,29 @@
+bundle:
+  name: ProspectorPro
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Unity Catalog name
+    default: att_log_anomaly_catalog
+  schema:
+    description: Schema name within the catalog
+    default: prospector_pro
+  warehouse_id:
+    description: SQL warehouse for compiled pipelines and metadata access
+    default: 0b11e3b9a1c7aff0
+  lakebase_instance:
+    description: Lakebase instance name for sessions
+    default: prospectorpro
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://fevm-att-log-anomaly.cloud.databricks.com
+      profile: fevm-att-log-anomaly
+    run_as:
+      user_name: daniel.perez@databricks.com

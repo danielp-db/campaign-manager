@@ -1,0 +1,20 @@
+resources:
+  jobs:
+    ProspectorPro_synthetic_data:
+      name: ProspectorPro_synthetic_data
+      description: One-time synthetic Telco data generation
+      tasks:
+        - task_key: generate
+          notebook_task:
+            notebook_path: ${workspace.file_path}/data/synthetic_data_gen
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+          environment_key: prospector_env
+      environments:
+        - environment_key: prospector_env
+          spec:
+            client: "2"
+            dependencies:
+              - faker
+              - pandas

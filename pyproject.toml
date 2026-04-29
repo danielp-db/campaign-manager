@@ -1,0 +1,31 @@
+[project]
+name = "prospectorpro"
+version = "0.1.0"
+description = "ProspectorPro — Telco marketing campaign platform with no-code DAG pipeline builder"
+requires-python = ">=3.11"
+dependencies = [
+    "dash>=2.18,<3.0",
+    "dash-bootstrap-components>=1.6",
+    "dash-cytoscape>=1.0",
+    "plotly>=5.24",
+    "pandas>=2.2",
+    "pydantic>=2.7",
+    "databricks-sdk>=0.36",
+    "databricks-sql-connector>=3.4",
+    "psycopg[binary]>=3.2",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E501"]

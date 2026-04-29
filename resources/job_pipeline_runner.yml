@@ -1,0 +1,24 @@
+resources:
+  jobs:
+    ProspectorPro_pipeline_runner:
+      name: ProspectorPro_pipeline_runner
+      description: Compiles a campaign DAG to SQL and materializes results
+      parameters:
+        - name: campaign_id
+          default: ""
+      tasks:
+        - task_key: run_campaign
+          notebook_task:
+            notebook_path: ${workspace.file_path}/data/pipeline_runner
+            base_parameters:
+              catalog: ${var.catalog}
+              schema: ${var.schema}
+              warehouse_id: ${var.warehouse_id}
+              campaign_id: "{{job.parameters.campaign_id}}"
+          environment_key: prospector_env
+      environments:
+        - environment_key: prospector_env
+          spec:
+            client: "2"
+            dependencies:
+              - pydantic>=2.7
