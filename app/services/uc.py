@@ -43,6 +43,19 @@ def execute(sql_text: str, params: tuple | None = None) -> None:
         cur.execute(sql_text, params)
 
 
+def list_tables_in_catalog(catalog: str, limit: int = 1000) -> list[str]:
+    """Return fully-qualified table names visible to the running principal."""
+    df = query_df(
+        f"SELECT table_schema, table_name FROM {catalog}.information_schema.tables "
+        f"WHERE table_type IN ('MANAGED', 'EXTERNAL') "
+        "ORDER BY table_schema, table_name "
+        f"LIMIT {int(limit)}"
+    )
+    if df.empty:
+        return []
+    return [f"{catalog}.{r['table_schema']}.{r['table_name']}" for _, r in df.iterrows()]
+
+
 def list_tables_in_schema(catalog: str, schema: str) -> list[str]:
     df = query_df(
         f"SELECT table_name FROM {catalog}.information_schema.tables "

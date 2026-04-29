@@ -39,6 +39,12 @@ def _bootstrap() -> None:
     except Exception as exc:
         log.warning("could not ensure Lakebase metadata tables: %s", exc)
     try:
+        wiped = metadata.migrate_drop_legacy_dag_definitions()
+        if wiped:
+            log.info("dropped %d legacy DAG-format pipeline definitions", wiped)
+    except Exception as exc:
+        log.warning("legacy migration failed: %s", exc)
+    try:
         n = demo_seed.seed_if_empty()
         if n:
             log.info("seeded %d demo campaigns", n)

@@ -1,13 +1,13 @@
-"""Single source of truth for compiling + executing a campaign DAG.
+"""Single source of truth for compiling + executing a campaign pipeline.
 
-Used by both the DAG editor's Run button and the Info tab's Run Now button.
-For scheduled runs, the same function is callable from a notebook/Job task.
+Used by both the Logic-tab Run button and the Info-tab Run Now button. The same
+function is callable from a notebook/Job for scheduled runs.
 """
 from __future__ import annotations
 
 import time
 
-from app.compiler import Dag, compile_dag
+from app.compiler import Pipeline, compile_pipeline
 from app.config import SETTINGS
 from app.services import metadata, uc
 
@@ -21,11 +21,11 @@ def run_campaign(campaign_id: str, actor: str) -> dict:
     if not pdef:
         raise ValueError("Save a pipeline definition before running.")
 
-    dag = Dag.model_validate(pdef["dag"])
+    pipeline = Pipeline.model_validate(pdef["dag"])
     results_table = SETTINGS.table(
         f"campaign_{campaign_id.replace('-', '_')}_results"
     )
-    sql_text = compile_dag(dag, results_table)
+    sql_text = compile_pipeline(pipeline, results_table)
 
     metadata.append_audit(
         campaign_id, actor, "pipeline_run_start", {"version": pdef["version"]}
@@ -35,10 +35,14 @@ def run_campaign(campaign_id: str, actor: str) -> dict:
         uc.execute(sql_text)
         df = uc.query_df(f"SELECT COUNT(*) AS n FROM {results_table}")
         leads = int(df.iloc[0]["n"]) if not df.empty else 0
-        sub_df = uc.query_df(
-            f"SELECT COUNT(DISTINCT account_id) AS n FROM {results_table}"
-        )
-        sub_count = int(sub_df.iloc[0]["n"]) if not sub_df.empty else 0
+        # Some pipelines may not retain account_id; tolerate failure.
+        try:
+            sub_df = uc.query_df(
+                f"SELECT COUNT(DISTINCT account_id) AS n FROM {results_table}"
+            )
+            sub_count = int(sub_df.iloc[0]["n"]) if not sub_df.empty else 0
+        except Exception:
+            sub_count = 0
     except Exception as exc:
         elapsed = round(time.time() - started, 2)
         metadata.append_audit(
@@ -57,7 +61,7 @@ def run_campaign(campaign_id: str, actor: str) -> dict:
     if campaign.get("schedule_cron"):
         new_status = "scheduled"
     elif cur_status in ("draft", "rejected"):
-        new_status = cur_status  # don't override a draft just because someone ran it
+        new_status = cur_status
     else:
         new_status = "approved"
 

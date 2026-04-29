@@ -1,4 +1,29 @@
-from app.compiler.compiler import compile_dag, compile_preview
-from app.compiler.dag import Dag, Edge, Node
+from app.compiler.pipeline import (
+    CompileError,
+    DatasetStep,
+    FieldStep,
+    FilterStep,
+    JoinKey,
+    JoinStep,
+    Pipeline,
+    SelectColumn,
+    SelectStep,
+    UnionStep,
+    compile_pipeline,
+    compile_pipeline_preview,
+)
 
-__all__ = ["Dag", "Node", "Edge", "compile_dag", "compile_preview"]
+__all__ = [
+    "CompileError",
+    "DatasetStep",
+    "FieldStep",
+    "FilterStep",
+    "JoinKey",
+    "JoinStep",
+    "Pipeline",
+    "SelectColumn",
+    "SelectStep",
+    "UnionStep",
+    "compile_pipeline",
+    "compile_pipeline_preview",
+]

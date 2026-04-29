@@ -1,5 +1,8 @@
 """Demo seed campaigns. Importable by main.py (auto-seed on bootstrap) or
-the CLI script (`data/seed_demo.py`) for full materialization."""
+the CLI script (`data/seed_demo.py`) for full materialization.
+
+Pipelines use the new step-list (CTE) format from `app.compiler.pipeline`.
+"""
 from __future__ import annotations
 
 from app.config import SETTINGS
@@ -50,87 +53,84 @@ CAMPAIGN_SCHEDULED = {
 }
 
 
-DAG_PENDING = {
-    "nodes": [
-        {"id": "subs", "type": "source_uc", "label": "Subscribers", "config": {"table_fqn": SUBSCRIBERS}},
+PIPELINE_PENDING = {
+    "steps": [
+        {"op": "dataset", "name": "subscribers", "source": "uc", "table_fqn": SUBSCRIBERS},
         {
-            "id": "f_tx",
-            "type": "filter",
-            "label": "TX residents",
-            "config": {"predicate": "region = 'Texas' AND arpu >= 80"},
+            "op": "filter",
+            "name": "tx_high_value",
+            "from": "subscribers",
+            "column": "region",
+            "operator": "=",
+            "value": "Texas",
         },
-        {"id": "sink", "type": "sink", "label": "Output", "config": {}},
-    ],
-    "edges": [
-        {"source": "subs", "target": "f_tx"},
-        {"source": "f_tx", "target": "sink"},
-    ],
+        {
+            "op": "filter",
+            "name": "tx_high_value_arpu",
+            "from": "tx_high_value",
+            "column": "arpu",
+            "operator": ">=",
+            "value": "80",
+        },
+    ]
 }
 
-DAG_APPROVED = {
-    "nodes": [
-        {"id": "subs", "type": "source_uc", "label": "Subscribers", "config": {"table_fqn": SUBSCRIBERS}},
-        {"id": "accts", "type": "source_uc", "label": "Accounts", "config": {"table_fqn": ACCOUNTS}},
+
+PIPELINE_APPROVED = {
+    "steps": [
+        {"op": "dataset", "name": "subscribers", "source": "uc", "table_fqn": SUBSCRIBERS},
+        {"op": "dataset", "name": "accounts", "source": "uc", "table_fqn": ACCOUNTS},
         {
-            "id": "elig",
-            "type": "filter",
-            "label": "Upgrade-eligible",
-            "config": {"predicate": "tenure_months >= 24 AND segment = 'Enterprise'"},
+            "op": "filter",
+            "name": "enterprise_subs",
+            "from": "subscribers",
+            "column": "segment",
+            "operator": "=",
+            "value": "Enterprise",
         },
         {
-            "id": "join",
-            "type": "join",
-            "label": "Add account info",
-            "config": {
-                "join_type": "left",
-                "on": "left.account_id = right.account_id",
-                "select_columns": "left.subscriber_id, left.account_id, left.plan, left.arpu, left.tenure_months, "
-                "left.region, left.segment, right.industry, right.employee_count",
-            },
+            "op": "filter",
+            "name": "tenured_enterprise",
+            "from": "enterprise_subs",
+            "column": "tenure_months",
+            "operator": ">=",
+            "value": "24",
         },
         {
-            "id": "ltv",
-            "type": "derive",
-            "label": "Compute LTV",
-            "config": {
-                "columns": [{"name": "ltv_estimate", "expression": "arpu * tenure_months * 1.0"}]
-            },
+            "op": "join",
+            "name": "with_accounts",
+            "left": "tenured_enterprise",
+            "right": "accounts",
+            "join_type": "LEFT",
+            "keys": [{"left": "account_id", "right": "account_id"}],
         },
-        {"id": "sink", "type": "sink", "label": "Output", "config": {}},
-    ],
-    "edges": [
-        {"source": "subs", "target": "elig"},
-        {"source": "elig", "target": "join", "side": "left"},
-        {"source": "accts", "target": "join", "side": "right"},
-        {"source": "join", "target": "ltv"},
-        {"source": "ltv", "target": "sink"},
-    ],
+        {
+            "op": "field",
+            "name": "with_ltv",
+            "from": "with_accounts",
+            "new_field_name": "ltv_estimate",
+            "expression": "arpu * tenure_months",
+        },
+    ]
 }
 
-DAG_SCHEDULED = {
-    "nodes": [
-        {"id": "subs", "type": "source_uc", "label": "Subscribers", "config": {"table_fqn": SUBSCRIBERS}},
+
+PIPELINE_SCHEDULED = {
+    "steps": [
+        {"op": "dataset", "name": "subscribers", "source": "uc", "table_fqn": SUBSCRIBERS},
         {
-            "id": "risk",
-            "type": "filter",
-            "label": "Churn risk > 0.6",
-            "config": {"predicate": "churn_score > 0.6"},
+            "op": "filter",
+            "name": "high_churn_risk",
+            "from": "subscribers",
+            "column": "churn_score",
+            "operator": ">",
+            "value": "0.6",
         },
-        {"id": "sink", "type": "sink", "label": "Output", "config": {}},
-    ],
-    "edges": [
-        {"source": "subs", "target": "risk"},
-        {"source": "risk", "target": "sink"},
-    ],
+    ]
 }
 
 
 def seed_if_empty() -> int:
-    """If no campaigns exist yet, insert the 4 demo campaigns + DAGs.
-
-    Returns the number of campaigns inserted (0 if already seeded).
-    Does NOT run pipelines — that's the user's job in the demo.
-    """
     df = metadata.list_campaigns()
     if not df.empty:
         return 0
@@ -139,7 +139,7 @@ def seed_if_empty() -> int:
 
     metadata.insert_campaign(CAMPAIGN_PENDING)
     metadata.save_pipeline_definition(
-        CAMPAIGN_PENDING["id"], DAG_PENDING, CAMPAIGN_PENDING["owner"]
+        CAMPAIGN_PENDING["id"], PIPELINE_PENDING, CAMPAIGN_PENDING["owner"]
     )
     metadata.append_approval(
         CAMPAIGN_PENDING["id"],
@@ -150,7 +150,7 @@ def seed_if_empty() -> int:
 
     metadata.insert_campaign(CAMPAIGN_APPROVED)
     metadata.save_pipeline_definition(
-        CAMPAIGN_APPROVED["id"], DAG_APPROVED, CAMPAIGN_APPROVED["owner"]
+        CAMPAIGN_APPROVED["id"], PIPELINE_APPROVED, CAMPAIGN_APPROVED["owner"]
     )
     metadata.append_approval(
         CAMPAIGN_APPROVED["id"], "approved", "compliance@att.com", "LGTM, no PII concerns"
@@ -158,7 +158,7 @@ def seed_if_empty() -> int:
 
     metadata.insert_campaign(CAMPAIGN_SCHEDULED)
     metadata.save_pipeline_definition(
-        CAMPAIGN_SCHEDULED["id"], DAG_SCHEDULED, CAMPAIGN_SCHEDULED["owner"]
+        CAMPAIGN_SCHEDULED["id"], PIPELINE_SCHEDULED, CAMPAIGN_SCHEDULED["owner"]
     )
     metadata.append_approval(
         CAMPAIGN_SCHEDULED["id"], "approved", "compliance@att.com", "Auto-approved (low risk)"

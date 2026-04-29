@@ -317,3 +317,34 @@ def append_upload(
 
 def list_uploads() -> pd.DataFrame:
     return _query_df(f"SELECT * FROM {T_UPLOADS} ORDER BY uploaded_at DESC")
+
+
+# --- migration -----------------------------------------------------------
+
+
+def migrate_drop_legacy_dag_definitions() -> int:
+    """If any pipeline_definitions are in the legacy DAG (nodes/edges) format,
+    wipe campaign metadata so demo_seed.seed_if_empty re-populates with the
+    new step-list pipeline format. Returns the number of legacy rows found.
+    """
+    df = _query_df(
+        f"SELECT campaign_id, dag_json FROM {T_PIPELINE_DEFS} LIMIT 50"
+    )
+    if df.empty:
+        return 0
+    legacy = 0
+    for _, r in df.iterrows():
+        raw = r["dag_json"]
+        obj = raw if isinstance(raw, dict) else json.loads(raw)
+        if "nodes" in obj or "edges" in obj:
+            legacy += 1
+    if legacy == 0:
+        return 0
+    with lakebase_connection() as conn, conn.cursor() as cur:
+        cur.execute(f"DELETE FROM {T_PIPELINE_DEFS}")
+        cur.execute(f"DELETE FROM {T_APPROVALS}")
+        cur.execute(f"DELETE FROM {T_AUDIT}")
+        cur.execute(f"DELETE FROM {T_UPLOADS}")
+        cur.execute(f"DELETE FROM {T_CAMPAIGNS}")
+        conn.commit()
+    return legacy
