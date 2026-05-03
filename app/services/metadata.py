@@ -171,12 +171,12 @@ def update_campaign_info(
 
 def update_campaign_schedule(campaign_id: str, cron: str | None) -> None:
     new_status_sql = (
-        "CASE WHEN %s IS NOT NULL AND status = 'approved' THEN 'scheduled' "
-        "WHEN %s IS NULL AND status = 'scheduled' THEN 'approved' "
+        "CASE WHEN %s::TEXT IS NOT NULL AND status = 'approved' THEN 'scheduled' "
+        "WHEN %s::TEXT IS NULL AND status = 'scheduled' THEN 'approved' "
         "ELSE status END"
     )
     _execute(
-        f"UPDATE {T_CAMPAIGNS} SET schedule_cron = %s, status = {new_status_sql}, "
+        f"UPDATE {T_CAMPAIGNS} SET schedule_cron = %s::TEXT, status = {new_status_sql}, "
         "updated_at = now() WHERE id = %s",
         (cron, cron, cron, campaign_id),
     )

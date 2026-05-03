@@ -181,12 +181,19 @@ def action_bar() -> html.Div:
         [
             dbc.Button("💾 Save Pipeline", id="pipeline-save", color="primary", className="me-2"),
             dbc.Button("🔍 Preview SQL", id="pipeline-preview", color="info", className="me-2"),
+            dbc.Button(
+                "👁 Preview Logic",
+                id="pipeline-preview-rows",
+                color="info",
+                outline=True,
+                className="me-2",
+            ),
             dbc.Button("▶ Run Now", id="pipeline-run", color="success", className="me-2"),
             html.Span(
                 "The last step's output is what gets materialized.",
                 className="text-muted small ms-2",
             ),
-            html.Div(id="pipeline-action-output", className="mt-3"),
+            dcc.Loading(html.Div(id="pipeline-action-output", className="mt-3"), type="dot"),
         ],
         className="mt-3",
     )

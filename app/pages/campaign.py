@@ -227,6 +227,87 @@ def _toggle_dataset_source(source):
     return {"display": "block"}, {"display": "none"}
 
 
+# --- Logic tab: dataset preview (top 10 rows of selected UC table) ------
+
+
+@callback(
+    Output("dataset-preview-area", "children"),
+    Input({"role": "step-form", "key": "table_fqn"}, "value"),
+    prevent_initial_call=True,
+)
+def _preview_dataset(table_fqn):
+    if not table_fqn:
+        return html.Div()
+    try:
+        df = uc.query_df(f"SELECT * FROM {table_fqn} LIMIT 10")
+    except Exception as exc:
+        return dbc.Alert(
+            f"Could not preview {table_fqn}: {exc}", color="warning", className="small mb-0"
+        )
+    if df.empty:
+        return html.Div(f"({table_fqn} is empty)", className="text-muted small")
+    return html.Div(
+        [
+            html.Div("Preview · top 10 rows", className="small text-muted mb-1"),
+            html.Div(
+                dbc.Table.from_dataframe(
+                    df.head(10), striped=True, hover=True, responsive=True, size="sm"
+                ),
+                style={"max-height": "260px", "overflow": "auto"},
+            ),
+        ]
+    )
+
+
+# --- Logic tab: run preview SQL and render rows -------------------------
+
+
+@callback(
+    Output("pipeline-action-output", "children", allow_duplicate=True),
+    Input("pipeline-preview-rows", "n_clicks"),
+    State("pipeline-store", "data"),
+    prevent_initial_call=True,
+)
+def _preview_pipeline_rows(_n, pipeline_data):
+    steps = (pipeline_data or {}).get("steps") or []
+    if not steps:
+        return dbc.Alert(
+            "Pipeline is empty — add at least one step.", color="warning", duration=3000
+        )
+    try:
+        pipeline = Pipeline.model_validate(pipeline_data)
+    except Exception as exc:
+        return dbc.Alert(f"Invalid pipeline: {exc}", color="danger")
+    try:
+        sql = compile_pipeline_preview(pipeline, limit=50)
+    except CompileError as exc:
+        return dbc.Alert(f"Compile error: {exc}", color="danger")
+    try:
+        df = uc.query_df(sql)
+    except Exception as exc:
+        return dbc.Alert(f"Preview failed: {exc}", color="danger")
+    last_step = steps[-1]["name"]
+    if df.empty:
+        return dbc.Alert(
+            f"Pipeline compiled successfully but produced 0 rows from `{last_step}`.",
+            color="info",
+        )
+    return dbc.Card(
+        [
+            dbc.CardHeader(
+                f"Preview · final step `{last_step}` · top {len(df)} rows of "
+                f"{', '.join(df.columns[:6])}{' ...' if len(df.columns) > 6 else ''}"
+            ),
+            dbc.CardBody(
+                dbc.Table.from_dataframe(
+                    df, striped=True, hover=True, responsive=True, size="sm"
+                ),
+                style={"max-height": "500px", "overflow": "auto"},
+            ),
+        ]
+    )
+
+
 # --- Logic tab: submit step --------------------------------------------
 
 

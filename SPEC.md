@@ -32,3 +32,58 @@ Use the following assets:
 - We can use as base for the query builder something like
     - https://github.com/fpatano/visualquerybuilder
 - If building any asset, prepended with "ProspectorPro_"
+
+
+Instead of using a DAG to define the Campaign Builder Logic, use buttonts to create elements as defined below.
+
+Have the following options to create nodes:
+- Add DataSet
+    - Inputs:
+        - A dropdown where you can choose Unity Catalog table or File
+            - If Unity Catalog Table, a dropdown that show all tables in the att_log_anomaly_catalog catalog
+            - If File, a button to upload a csv file
+            - Name of TemporaryDataSet Output
+    - Output:
+        - A TemporaryDataSet
+            - Node which reflects a CTE in the SQL query behind the campaign logic of a SELECT * FROM <unity_catalog_table> or a SELECT * FROM read_files(<details>) depending on the chosen option
+- Add Filter
+    - Inputs:
+        - A dropdown with the existing TemporaryDataSets in the current definition
+        - A column name from the chosen TemporaryDataSet
+        - A way to define the filter (greater than, less than, equal, etc)
+        - Name of TemporaryDataSet Output
+            - Node which reflects a CTE in the SQL query behind the compaign logic of a WHERE predicate applied on the input TemporaryDataSet
+    - Output:
+        - A TemporaryDataSet
+- Add Field
+    - Inputs:
+        - A dropdown with the existing TemporaryDataSets in the current definition
+        - A textbox to fill with a SQL statement
+        - Name of TemporaryDataSet Output
+    - Output
+        - A TemporaryDataSet
+            - Node which reflects a CTE in the SQL query behind the compaign logic of a field creation according to the SQL Statement in the textbox
+- Select Field
+    - Inputs:
+        - A dropdown with the existing TemporaryDataSets in the current definition
+        - A way to add as many columns from the exisiting TemporaryDataSet and an option to rename them if needed
+        - Name of TemporaryDataSet Output
+    - Output
+        - A TemporaryDataSet
+            - Node which reflects a CTE in the SQL query behind the compaign logic of a SELECT ... FROM the input TemporaryDataSet with any column selection and aliases
+- Add Join
+    - Inputs:
+        - Two dropdowns for Left and Right TemporaryDataSets in the current definition
+        - A dropdown defining type of join
+        - A dropdown defining the fields to join by
+        - Name of TemporaryDataSet Output
+    - Output
+        - A TemporaryDataSet
+            - Node which reflects a CTE in the SQL query which represents the JOIN between the two TemporaryDatasets (CTEs)
+- Add Union
+    - Inputs:
+        - Two dropdowns for Left and Right TemporaryDataSets in the current definition
+        - Name of TemporaryDataSet Output
+    - Output
+        - Node which reflects a CTE in the SQL query which represents the UNION between the two TemporaryDatasets (CTEs)
+

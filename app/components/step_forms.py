@@ -103,6 +103,10 @@ def dataset_form(uc_tables: list[str], step: dict | None = None) -> html.Div:
                         value=s.get("table_fqn") or None,
                         placeholder="Pick a UC table",
                     ),
+                    dcc.Loading(
+                        html.Div(id="dataset-preview-area", className="mt-3"),
+                        type="dot",
+                    ),
                 ],
                 id="dataset-uc-block",
                 style={"display": "block" if s.get("source", "uc") == "uc" else "none"},
