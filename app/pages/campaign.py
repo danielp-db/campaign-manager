@@ -686,11 +686,79 @@ def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
 # --- Approvals callbacks ---------------------------------------------------
 
 
+def _persist_approval(
+    campaign_id: str, new_status: str, user: str, comment: str
+) -> tuple[bool, str]:
+    """Returns (ok, message). Caller decides how to surface to the UI."""
+    try:
+        metadata.update_campaign_status(campaign_id, new_status)
+        metadata.append_approval(campaign_id, new_status, user, comment)
+        metadata.append_audit(
+            campaign_id, user, f"approval_{new_status}", {"comment": comment}
+        )
+    except Exception as exc:
+        log.exception("approval: persist failed campaign=%s status=%s", campaign_id, new_status)
+        return False, f"Failed to update campaign: {exc}"
+    log.info("approval: campaign=%s -> %s by %s", campaign_id, new_status, user)
+    return True, ""
+
+
 @callback(
-    Output("approval-result", "children"),
+    Output("approval-result", "children", allow_duplicate=True),
     Output("campaign-refresh", "data", allow_duplicate=True),
     Input("approval-submit", "n_clicks"),
+    State("campaign-loaded-id", "data"),
+    State("session-store", "data"),
+    State("campaign-refresh", "data"),
+    prevent_initial_call=True,
+)
+def _submit_for_approval(n, campaign_id, session, refresh):
+    log.info("submit_for_approval: n=%s campaign=%s", n, campaign_id)
+    if not n or not campaign_id:
+        return no_update, no_update
+    role = (session or {}).get("role", ROLE_MARKETER)
+    if role != ROLE_MARKETER:
+        return dbc.Alert("Only marketers can submit.", color="warning"), no_update
+    user = (session or {}).get("user_email", "demo@databricks.com")
+    ok, err = _persist_approval(campaign_id, "pending_approval", user, "")
+    if not ok:
+        return dbc.Alert(err, color="danger"), no_update
+    return (
+        dbc.Alert("Submitted for compliance review.", color="success", duration=3000),
+        (refresh or 0) + 1,
+    )
+
+
+@callback(
+    Output("approval-result", "children", allow_duplicate=True),
+    Output("campaign-refresh", "data", allow_duplicate=True),
     Input("approval-approve", "n_clicks"),
+    State("approval-comment", "value"),
+    State("campaign-loaded-id", "data"),
+    State("session-store", "data"),
+    State("campaign-refresh", "data"),
+    prevent_initial_call=True,
+)
+def _approve(n, comment, campaign_id, session, refresh):
+    log.info("approve: n=%s campaign=%s", n, campaign_id)
+    if not n or not campaign_id:
+        return no_update, no_update
+    role = (session or {}).get("role", ROLE_MARKETER)
+    if role != ROLE_COMPLIANCE:
+        return dbc.Alert("Only compliance can approve.", color="warning"), no_update
+    user = (session or {}).get("user_email", "demo@databricks.com")
+    ok, err = _persist_approval(campaign_id, "approved", user, comment or "")
+    if not ok:
+        return dbc.Alert(err, color="danger"), no_update
+    return (
+        dbc.Alert("Approved.", color="success", duration=3000),
+        (refresh or 0) + 1,
+    )
+
+
+@callback(
+    Output("approval-result", "children", allow_duplicate=True),
+    Output("campaign-refresh", "data", allow_duplicate=True),
     Input("approval-reject", "n_clicks"),
     State("approval-comment", "value"),
     State("campaign-loaded-id", "data"),
@@ -698,44 +766,21 @@ def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
     State("campaign-refresh", "data"),
     prevent_initial_call=True,
 )
-def _approval_action(_s, _a, _r, comment, campaign_id, session, refresh):
-    triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
-    triggered = ctx.triggered_id
-    user = (session or {}).get("user_email", "demo@databricks.com")
-    role = (session or {}).get("role", ROLE_MARKETER)
-    log.info(
-        "approval_action: triggered=%s n=%s campaign_id=%s role=%s",
-        triggered,
-        triggered_n,
-        campaign_id,
-        role,
-    )
-    if not triggered_n:
+def _reject(n, comment, campaign_id, session, refresh):
+    log.info("reject: n=%s campaign=%s", n, campaign_id)
+    if not n or not campaign_id:
         return no_update, no_update
-    if not campaign_id:
-        return dbc.Alert("No campaign loaded.", color="danger"), no_update
-
-    if triggered == "approval-submit" and role == ROLE_MARKETER:
-        new_status, msg = "pending_approval", "Submitted for compliance review."
-    elif triggered == "approval-approve" and role == ROLE_COMPLIANCE:
-        new_status, msg = "approved", "Approved."
-    elif triggered == "approval-reject" and role == ROLE_COMPLIANCE:
-        new_status, msg = "rejected", "Rejected."
-    else:
-        return dbc.Alert("Action not permitted for your role.", color="warning"), no_update
-
-    try:
-        metadata.update_campaign_status(campaign_id, new_status)
-        metadata.append_approval(campaign_id, new_status, user, comment or "")
-        metadata.append_audit(
-            campaign_id, user, f"approval_{new_status}", {"comment": comment or ""}
-        )
-    except Exception as exc:
-        log.exception("approval_action: failed to persist status for %s", campaign_id)
-        return dbc.Alert(f"Failed to update campaign: {exc}", color="danger"), no_update
-
-    log.info("approval_action: %s -> %s OK", campaign_id, new_status)
-    return dbc.Alert(msg, color="success", duration=3000), (refresh or 0) + 1
+    role = (session or {}).get("role", ROLE_MARKETER)
+    if role != ROLE_COMPLIANCE:
+        return dbc.Alert("Only compliance can reject.", color="warning"), no_update
+    user = (session or {}).get("user_email", "demo@databricks.com")
+    ok, err = _persist_approval(campaign_id, "rejected", user, comment or "")
+    if not ok:
+        return dbc.Alert(err, color="danger"), no_update
+    return (
+        dbc.Alert("Rejected.", color="success", duration=3000),
+        (refresh or 0) + 1,
+    )
 
 
 # --- Info tab callbacks ----------------------------------------------------
