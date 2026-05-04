@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "mcp__plugin_databricks-ai-dev-kit_databricks__create_or_update_genie"
-    ]
-  }
-}
