@@ -46,18 +46,19 @@ def _new_campaign_skeleton(campaign_id: str, owner: str) -> dict:
     }
 
 
-def _load_or_create(campaign_id: str, owner: str) -> tuple[dict, dict]:
+def _load_or_create(campaign_id: str, owner: str) -> tuple[dict, dict, bool]:
+    """Returns (campaign, pipeline_data, was_created)."""
     if campaign_id == "new":
         cid = str(uuid.uuid4())[:8]
         c = _new_campaign_skeleton(cid, owner)
         metadata.insert_campaign(c)
-        return metadata.get_campaign(cid) or c, {"steps": []}
+        return metadata.get_campaign(cid) or c, {"steps": []}, True
     c = metadata.get_campaign(campaign_id) or _new_campaign_skeleton(campaign_id, owner)
     pdef = metadata.get_latest_pipeline_definition(campaign_id)
     pipeline_data = pdef["dag"] if pdef else {"steps": []}
     if not isinstance(pipeline_data, dict) or "steps" not in pipeline_data:
         pipeline_data = {"steps": []}
-    return c, pipeline_data
+    return c, pipeline_data, False
 
 
 def layout(campaign_id: str = "new", **_):
@@ -72,15 +73,20 @@ def layout(campaign_id: str = "new", **_):
 
 @callback(
     Output("campaign-shell", "children"),
+    Output("campaign-id-store", "data", allow_duplicate=True),
     Input("campaign-id-store", "data"),
     Input("campaign-refresh", "data"),
     Input("session-store", "data"),
+    prevent_initial_call="initial_duplicate",
 )
 def _render_detail(campaign_id: str, _refresh, session: dict | None):
     role = (session or {}).get("role", ROLE_MARKETER)
     owner = (session or {}).get("user_email", "demo@databricks.com")
-    campaign, pipeline_data = _load_or_create(campaign_id, owner)
+    campaign, pipeline_data, was_created = _load_or_create(campaign_id, owner)
     cid = campaign["id"]
+    # Pin the id store to the real id so subsequent re-renders don't keep
+    # spawning new draft campaigns from /campaign/new.
+    new_id_store = cid if was_created else no_update
     approvals = metadata.list_approvals(cid)
     recent = metadata.recent_runs(cid, limit=10)
 
@@ -98,7 +104,7 @@ def _render_detail(campaign_id: str, _refresh, session: dict | None):
         ],
     )
 
-    return html.Div(
+    shell = html.Div(
         [
             dcc.Store(id="campaign-loaded-id", data=cid),
             dbc.Breadcrumb(
@@ -110,6 +116,7 @@ def _render_detail(campaign_id: str, _refresh, session: dict | None):
             tabs,
         ]
     )
+    return shell, new_id_store
 
 
 # --- Logic tab: load UC tables once on mount ----------------------------
