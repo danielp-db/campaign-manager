@@ -83,74 +83,126 @@ def _step_summary(step: dict) -> str:
     return ""
 
 
-def _step_card(step: dict, idx: int, total: int) -> dbc.Card:
+def _columns_section(columns: list[str] | None) -> html.Div:
+    if columns is None:
+        return html.Div(
+            "Loading columns…", className="text-muted small mt-2 fst-italic"
+        )
+    if not columns:
+        return html.Div(
+            "(no columns — preview SQL or check upstream)",
+            className="text-muted small mt-2",
+        )
+    badges = [
+        dbc.Badge(c, color="light", text_color="dark", className="me-1 mb-1 border")
+        for c in columns
+    ]
+    return html.Div(
+        [
+            html.Div("Columns", className="text-muted small text-uppercase mt-2"),
+            html.Div(badges, className="d-flex flex-wrap"),
+        ]
+    )
+
+
+def _step_card(
+    step: dict,
+    idx: int,
+    total: int,
+    expanded: bool,
+    columns: list[str] | None,
+) -> dbc.Card:
     op = step.get("op", "?")
     color = OP_BADGE_COLORS.get(op, "secondary")
     is_last = idx == total - 1
+    cols_button_label = "Hide Cols" if expanded else "📋 Cols"
     return dbc.Card(
         dbc.CardBody(
-            dbc.Row(
-                [
-                    dbc.Col(
-                        [
-                            html.Div(
-                                [
-                                    dbc.Badge(
-                                        f"#{idx + 1} · {op.upper()}",
-                                        color=color,
-                                        className="me-2",
-                                    ),
-                                    html.Strong(step.get("name", ""), className="me-2"),
-                                    (
-                                        dbc.Badge("OUTPUT", color="dark", className="ms-1")
-                                        if is_last
-                                        else None
-                                    ),
-                                ],
-                                className="mb-1",
-                            ),
-                            html.Code(_step_summary(step), className="small text-muted"),
-                        ],
-                        md=10,
-                    ),
-                    dbc.Col(
-                        [
-                            dbc.Button(
-                                "Edit",
-                                id={"role": "step-edit", "name": step["name"]},
-                                color="link",
-                                size="sm",
-                                className="me-1",
-                            ),
-                            dbc.Button(
-                                "✕",
-                                id={"role": "step-delete", "name": step["name"]},
-                                color="link",
-                                size="sm",
-                                style={"color": "#dc3545"},
-                            ),
-                        ],
-                        md=2,
-                        className="text-end",
-                    ),
-                ],
-                className="align-items-center",
-            )
+            [
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                html.Div(
+                                    [
+                                        dbc.Badge(
+                                            f"#{idx + 1} · {op.upper()}",
+                                            color=color,
+                                            className="me-2",
+                                        ),
+                                        html.Strong(step.get("name", ""), className="me-2"),
+                                        (
+                                            dbc.Badge("OUTPUT", color="dark", className="ms-1")
+                                            if is_last
+                                            else None
+                                        ),
+                                    ],
+                                    className="mb-1",
+                                ),
+                                html.Code(_step_summary(step), className="small text-muted"),
+                            ],
+                            md=8,
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Button(
+                                    cols_button_label,
+                                    id={"role": "step-cols", "name": step["name"]},
+                                    color="link",
+                                    size="sm",
+                                    className="me-1",
+                                ),
+                                dbc.Button(
+                                    "Edit",
+                                    id={"role": "step-edit", "name": step["name"]},
+                                    color="link",
+                                    size="sm",
+                                    className="me-1",
+                                ),
+                                dbc.Button(
+                                    "✕",
+                                    id={"role": "step-delete", "name": step["name"]},
+                                    color="link",
+                                    size="sm",
+                                    style={"color": "#dc3545"},
+                                ),
+                            ],
+                            md=4,
+                            className="text-end",
+                        ),
+                    ],
+                    className="align-items-center",
+                ),
+                _columns_section(columns) if expanded else html.Div(),
+            ]
         ),
         className="mb-2",
     )
 
 
-def step_list(pipeline: dict) -> html.Div:
+def step_list(pipeline: dict, expanded: dict | None = None) -> html.Div:
     steps = (pipeline or {}).get("steps") or []
     if not steps:
         return dbc.Alert(
             "No steps yet. Click any of the buttons above to add a Dataset, Filter, "
-            "Field, Select, Join, or Union step.",
+            "Field, Select, Join, Union, Aggregate, or Custom Transformation step.",
             color="light",
             className="text-center",
         )
-    return html.Div([_step_card(s, i, len(steps)) for i, s in enumerate(steps)])
+    expanded_name = (expanded or {}).get("name") if expanded else None
+    expanded_cols = (expanded or {}).get("columns") if expanded else None
+    return html.Div(
+        [
+            _step_card(
+                s,
+                i,
+                len(steps),
+                expanded=(s["name"] == expanded_name),
+                columns=expanded_cols if s["name"] == expanded_name else None,
+            )
+            for i, s in enumerate(steps)
+        ]
+    )
 
 
 def step_modal() -> dbc.Modal:
@@ -219,8 +271,13 @@ def logic_panel(pipeline: dict | None = None) -> html.Div:
             dcc.Store(id="step-modal-state", data=None),
             # UC tables list, populated on first render.
             dcc.Store(id="uc-tables-store", data=[]),
+            # Currently-expanded step: {"name": "...", "columns": [...]} or None.
+            dcc.Store(id="expanded-step", data=None),
             add_step_buttons(),
-            html.Div(id="pipeline-step-list", children=step_list(pipeline)),
+            dcc.Loading(
+                html.Div(id="pipeline-step-list", children=step_list(pipeline)),
+                type="dot",
+            ),
             action_bar(),
             step_modal(),
         ]

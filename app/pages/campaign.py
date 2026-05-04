@@ -134,9 +134,46 @@ def _load_uc_tables(_id, current):
 @callback(
     Output("pipeline-step-list", "children"),
     Input("pipeline-store", "data"),
+    Input("expanded-step", "data"),
 )
-def _render_step_list(pipeline):
-    return step_list(pipeline)
+def _render_step_list(pipeline, expanded):
+    return step_list(pipeline, expanded)
+
+
+@callback(
+    Output("expanded-step", "data"),
+    Input({"role": "step-cols", "name": ALL}, "n_clicks"),
+    State("expanded-step", "data"),
+    State("pipeline-store", "data"),
+    prevent_initial_call=True,
+)
+def _toggle_step_columns(_clicks, current, pipeline_data):
+    triggered = ctx.triggered_id
+    if not isinstance(triggered, dict):
+        return no_update
+    value = ctx.triggered[0].get("value")
+    if not value:
+        return no_update
+    name = triggered.get("name")
+    if current and current.get("name") == name:
+        return None  # collapse
+    cols = columns.get_step_columns(pipeline_data, name)
+    return {"name": name, "columns": cols}
+
+
+@callback(
+    Output("expanded-step", "data", allow_duplicate=True),
+    Input("pipeline-store", "data"),
+    State("expanded-step", "data"),
+    prevent_initial_call=True,
+)
+def _refresh_expanded_columns(pipeline_data, current):
+    """When the pipeline changes, refresh columns for whatever's expanded so
+    the badge list stays accurate."""
+    if not current or not current.get("name"):
+        return no_update
+    cols = columns.get_step_columns(pipeline_data, current["name"])
+    return {"name": current["name"], "columns": cols}
 
 
 # --- Logic tab: open / cancel / submit modal ----------------------------
@@ -241,50 +278,39 @@ def _toggle_dataset_source(source):
 # --- Logic tab: live column dropdown updates ---------------------------
 
 
+_KEY_TO_DEPENDENTS = {
+    "from": {"column", "group_by"},
+    "left": {"left_key"},
+    "right": {"right_key"},
+}
+
+
 @callback(
     Output({"role": "step-form", "key": ALL}, "options"),
-    Input({"role": "step-form", "key": "from"}, "value"),
-    Input({"role": "step-form", "key": "left"}, "value"),
-    Input({"role": "step-form", "key": "right"}, "value"),
+    Input({"role": "step-form", "key": ALL}, "value"),
     State({"role": "step-form", "key": ALL}, "id"),
-    State({"role": "step-form", "key": ALL}, "options"),
     State("pipeline-store", "data"),
     prevent_initial_call=True,
 )
-def _update_column_options(from_val, left_val, right_val, ids, current_options, pipeline_data):
-    keys_present = {idobj["key"] for idobj in ids}
-    needs_from = bool(keys_present & {"column", "group_by"})
-    needs_left = "left_key" in keys_present
-    needs_right = "right_key" in keys_present
+def _update_column_options(_values, ids, pipeline_data):
+    triggered = ctx.triggered_id
+    n = len(ids)
+    if not isinstance(triggered, dict):
+        return [no_update] * n
+    key = triggered.get("key")
+    dependents = _KEY_TO_DEPENDENTS.get(key)
+    if not dependents:
+        return [no_update] * n
 
-    cols_from = (
-        columns.get_step_columns(pipeline_data, from_val)
-        if (needs_from and from_val)
-        else []
+    # The triggering field's current value (where the user picked a dataset).
+    triggered_value = next(
+        (v for v, idobj in zip(_values, ids) if idobj["key"] == key), None
     )
-    cols_left = (
-        columns.get_step_columns(pipeline_data, left_val)
-        if (needs_left and left_val)
-        else []
-    )
-    cols_right = (
-        columns.get_step_columns(pipeline_data, right_val)
-        if (needs_right and right_val)
-        else []
-    )
-
-    out: list = []
-    for idobj, cur in zip(ids, current_options):
-        key = idobj["key"]
-        if key in ("column", "group_by"):
-            out.append([{"label": c, "value": c} for c in cols_from])
-        elif key == "left_key":
-            out.append([{"label": c, "value": c} for c in cols_left])
-        elif key == "right_key":
-            out.append([{"label": c, "value": c} for c in cols_right])
-        else:
-            out.append(no_update)
-    return out
+    cols = columns.get_step_columns(pipeline_data, triggered_value) if triggered_value else []
+    new_options = [{"label": c, "value": c} for c in cols]
+    return [
+        new_options if idobj["key"] in dependents else no_update for idobj in ids
+    ]
 
 
 # --- Logic tab: dataset preview (top 10 rows of selected UC table) ------
