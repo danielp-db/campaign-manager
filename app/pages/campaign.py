@@ -5,6 +5,7 @@ typed steps via a shared modal; each step is a named CTE in the compiled SQL.
 """
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 
@@ -23,6 +24,8 @@ from app.config import SETTINGS
 from app.services import ai_cron, columns, genie, metadata, runner, uc
 
 dash.register_page(__name__, path_template="/campaign/<campaign_id>", name="Campaign")
+
+log = logging.getLogger("prospectorpro.campaign")
 
 
 # --- page lifecycle ------------------------------------------------------
@@ -73,11 +76,10 @@ def layout(campaign_id: str = "new", **_):
 
 @callback(
     Output("campaign-shell", "children"),
-    Output("campaign-id-store", "data", allow_duplicate=True),
+    Output("campaign-id-store", "data"),
     Input("campaign-id-store", "data"),
     Input("campaign-refresh", "data"),
     Input("session-store", "data"),
-    prevent_initial_call="initial_duplicate",
 )
 def _render_detail(campaign_id: str, _refresh, session: dict | None):
     role = (session or {}).get("role", ROLE_MARKETER)
@@ -686,7 +688,7 @@ def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
 
 @callback(
     Output("approval-result", "children"),
-    Output("campaign-refresh", "data"),
+    Output("campaign-refresh", "data", allow_duplicate=True),
     Input("approval-submit", "n_clicks"),
     Input("approval-approve", "n_clicks"),
     Input("approval-reject", "n_clicks"),
@@ -698,11 +700,20 @@ def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
 )
 def _approval_action(_s, _a, _r, comment, campaign_id, session, refresh):
     triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
-    if not triggered_n:
-        return no_update, no_update
     triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
     role = (session or {}).get("role", ROLE_MARKETER)
+    log.info(
+        "approval_action: triggered=%s n=%s campaign_id=%s role=%s",
+        triggered,
+        triggered_n,
+        campaign_id,
+        role,
+    )
+    if not triggered_n:
+        return no_update, no_update
+    if not campaign_id:
+        return dbc.Alert("No campaign loaded.", color="danger"), no_update
 
     if triggered == "approval-submit" and role == ROLE_MARKETER:
         new_status, msg = "pending_approval", "Submitted for compliance review."
@@ -713,9 +724,17 @@ def _approval_action(_s, _a, _r, comment, campaign_id, session, refresh):
     else:
         return dbc.Alert("Action not permitted for your role.", color="warning"), no_update
 
-    metadata.update_campaign_status(campaign_id, new_status)
-    metadata.append_approval(campaign_id, new_status, user, comment or "")
-    metadata.append_audit(campaign_id, user, f"approval_{new_status}", {"comment": comment or ""})
+    try:
+        metadata.update_campaign_status(campaign_id, new_status)
+        metadata.append_approval(campaign_id, new_status, user, comment or "")
+        metadata.append_audit(
+            campaign_id, user, f"approval_{new_status}", {"comment": comment or ""}
+        )
+    except Exception as exc:
+        log.exception("approval_action: failed to persist status for %s", campaign_id)
+        return dbc.Alert(f"Failed to update campaign: {exc}", color="danger"), no_update
+
+    log.info("approval_action: %s -> %s OK", campaign_id, new_status)
     return dbc.Alert(msg, color="success", duration=3000), (refresh or 0) + 1
 
 
