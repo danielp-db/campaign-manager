@@ -15,6 +15,7 @@ STATUS_TABS = [
     ("draft", "Draft"),
     ("pending_approval", "Pending Approval"),
     ("approved", "Approved"),
+    ("ad_hoc", "Ad Hoc"),
     ("scheduled", "Scheduled"),
     ("running", "Running"),
     ("done", "Done"),

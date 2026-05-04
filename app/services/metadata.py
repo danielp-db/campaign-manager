@@ -55,6 +55,7 @@ def ensure_tables() -> None:
                 organization    TEXT,
                 owner           TEXT,
                 status          TEXT,
+                run_mode        TEXT NOT NULL DEFAULT 'ad_hoc',
                 schedule_cron   TEXT,
                 lead_count      BIGINT,
                 sub_account_count BIGINT,
@@ -65,6 +66,20 @@ def ensure_tables() -> None:
                 updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """
+        )
+        # Migration: add run_mode for tables created before this column existed.
+        cur.execute(
+            f"ALTER TABLE {T_CAMPAIGNS} ADD COLUMN IF NOT EXISTS run_mode TEXT NOT NULL DEFAULT 'ad_hoc'"
+        )
+        # Backfill run_mode from any campaigns that had a cron or scheduled status.
+        cur.execute(
+            f"UPDATE {T_CAMPAIGNS} SET run_mode = 'scheduled' "
+            "WHERE (schedule_cron IS NOT NULL AND schedule_cron <> '') "
+            "OR status = 'scheduled'"
+        )
+        # 'scheduled' is no longer a status — it's a run_mode. Demote those.
+        cur.execute(
+            f"UPDATE {T_CAMPAIGNS} SET status = 'approved' WHERE status = 'scheduled'"
         )
         cur.execute(
             f"""
@@ -127,11 +142,20 @@ def ensure_tables() -> None:
 # --- campaigns ------------------------------------------------------------
 
 
-def list_campaigns(status: str | None = None) -> pd.DataFrame:
-    if status:
+def list_campaigns(filter_value: str | None = None) -> pd.DataFrame:
+    """`filter_value` is a tab name. 'scheduled' filters by run_mode; everything else by status."""
+    if filter_value == "scheduled":
+        return _query_df(
+            f"SELECT * FROM {T_CAMPAIGNS} WHERE run_mode = 'scheduled' ORDER BY updated_at DESC"
+        )
+    if filter_value == "ad_hoc":
+        return _query_df(
+            f"SELECT * FROM {T_CAMPAIGNS} WHERE run_mode = 'ad_hoc' ORDER BY updated_at DESC"
+        )
+    if filter_value:
         return _query_df(
             f"SELECT * FROM {T_CAMPAIGNS} WHERE status = %s ORDER BY updated_at DESC",
-            (status,),
+            (filter_value,),
         )
     return _query_df(f"SELECT * FROM {T_CAMPAIGNS} ORDER BY updated_at DESC")
 
@@ -170,16 +194,28 @@ def update_campaign_info(
 
 
 def update_campaign_schedule(campaign_id: str, cron: str | None) -> None:
-    new_status_sql = (
-        "CASE WHEN %s::TEXT IS NOT NULL AND status = 'approved' THEN 'scheduled' "
-        "WHEN %s::TEXT IS NULL AND status = 'scheduled' THEN 'approved' "
-        "ELSE status END"
-    )
+    """Set the schedule cron. Does NOT change run_mode — caller's responsibility."""
     _execute(
-        f"UPDATE {T_CAMPAIGNS} SET schedule_cron = %s::TEXT, status = {new_status_sql}, "
-        "updated_at = now() WHERE id = %s",
-        (cron, cron, cron, campaign_id),
+        f"UPDATE {T_CAMPAIGNS} SET schedule_cron = %s::TEXT, updated_at = now() WHERE id = %s",
+        (cron, campaign_id),
     )
+
+
+def update_campaign_run_mode(campaign_id: str, mode: str) -> None:
+    """Switch a campaign's run mode. ad_hoc clears schedule_cron."""
+    if mode not in ("ad_hoc", "scheduled"):
+        raise ValueError(f"invalid run_mode: {mode}")
+    if mode == "ad_hoc":
+        _execute(
+            f"UPDATE {T_CAMPAIGNS} SET run_mode = 'ad_hoc', schedule_cron = NULL, "
+            "updated_at = now() WHERE id = %s",
+            (campaign_id,),
+        )
+    else:
+        _execute(
+            f"UPDATE {T_CAMPAIGNS} SET run_mode = 'scheduled', updated_at = now() WHERE id = %s",
+            (campaign_id,),
+        )
 
 
 def update_campaign_run_result(

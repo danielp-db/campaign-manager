@@ -36,6 +36,7 @@ def _new_campaign_skeleton(campaign_id: str, owner: str) -> dict:
         "organization": "",
         "owner": owner,
         "status": "draft",
+        "run_mode": "ad_hoc",
         "schedule_cron": None,
         "lead_count": None,
         "sub_account_count": None,
@@ -986,6 +987,32 @@ def _ai_convert(_n, description):
 
 
 # --- Schedule: Save / Clear --------------------------------------------
+
+
+@callback(
+    Output("info-schedule-collapse", "is_open"),
+    Output("info-run-output", "children", allow_duplicate=True),
+    Output("campaign-refresh", "data", allow_duplicate=True),
+    Input("info-run-mode", "value"),
+    State("campaign-loaded-id", "data"),
+    State("session-store", "data"),
+    State("campaign-refresh", "data"),
+    prevent_initial_call=True,
+)
+def _set_run_mode(mode, campaign_id, session, refresh):
+    if not campaign_id or mode not in ("ad_hoc", "scheduled"):
+        return no_update, no_update, no_update
+    user = (session or {}).get("user_email", "demo@databricks.com")
+    metadata.update_campaign_run_mode(campaign_id, mode)
+    metadata.append_audit(campaign_id, user, "run_mode_updated", {"mode": mode})
+    msg = (
+        "Switched to Ad Hoc — schedule cleared." if mode == "ad_hoc" else "Switched to Scheduled mode."
+    )
+    return (
+        mode == "scheduled",
+        dbc.Alert(msg, color="info", duration=2500),
+        (refresh or 0) + 1,
+    )
 
 
 @callback(

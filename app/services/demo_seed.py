@@ -19,6 +19,7 @@ CAMPAIGN_DRAFT = {
     "organization": "Consumer Marketing",
     "owner": "marketing-ops@att.com",
     "status": "draft",
+    "run_mode": "ad_hoc",
     "schedule_cron": None,
 }
 
@@ -29,6 +30,7 @@ CAMPAIGN_PENDING = {
     "organization": "Customer Success",
     "owner": "retention-ops@att.com",
     "status": "pending_approval",
+    "run_mode": "ad_hoc",
     "schedule_cron": None,
 }
 
@@ -39,6 +41,7 @@ CAMPAIGN_APPROVED = {
     "organization": "Enterprise Marketing",
     "owner": "enterprise-marketing@att.com",
     "status": "approved",
+    "run_mode": "ad_hoc",
     "schedule_cron": None,
 }
 
@@ -48,7 +51,8 @@ CAMPAIGN_SCHEDULED = {
     "priority": "medium",
     "organization": "Data Science",
     "owner": "ds-marketing@att.com",
-    "status": "scheduled",
+    "status": "approved",
+    "run_mode": "scheduled",
     "schedule_cron": "0 0 6 * * ?",
 }
 

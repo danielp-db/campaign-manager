@@ -10,10 +10,17 @@ STATUS_COLORS = {
     "pending_approval": "warning",
     "approved": "info",
     "rejected": "danger",
-    "scheduled": "primary",
+    "scheduled": "primary",  # legacy — should not appear after migration
     "running": "success",
     "done": "light",
 }
+
+RUN_MODE_LABELS = {"ad_hoc": ("Ad Hoc", "secondary"), "scheduled": ("Scheduled", "primary")}
+
+
+def run_mode_badge(mode: str | None) -> dbc.Badge:
+    label, color = RUN_MODE_LABELS.get((mode or "ad_hoc").lower(), ("Ad Hoc", "secondary"))
+    return dbc.Badge(label, color=color, pill=True)
 
 
 def status_badge(status: str) -> dbc.Badge:
@@ -42,6 +49,7 @@ def campaign_table(df: pd.DataFrame) -> html.Div:
                 [
                     html.Td(html.A(r["name"], href=f"/campaign/{r['id']}", className="fw-semibold")),
                     html.Td(status_badge(r.get("status"))),
+                    html.Td(run_mode_badge(r.get("run_mode"))),
                     html.Td(r.get("priority") or "—"),
                     html.Td(r.get("organization") or "—"),
                     html.Td(r.get("owner") or "—"),
@@ -62,6 +70,7 @@ def campaign_table(df: pd.DataFrame) -> html.Div:
                     [
                         html.Th("Campaign"),
                         html.Th("Status"),
+                        html.Th("Mode"),
                         html.Th("Priority"),
                         html.Th("Organization"),
                         html.Th("Owner"),

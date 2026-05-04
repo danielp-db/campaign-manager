@@ -58,9 +58,9 @@ def run_campaign(campaign_id: str, actor: str) -> dict:
 
     elapsed = round(time.time() - started, 2)
     cur_status = (campaign.get("status") or "").lower()
-    if campaign.get("schedule_cron"):
-        new_status = "scheduled"
-    elif cur_status in ("draft", "rejected"):
+    # Status reflects approval lifecycle only. run_mode (ad_hoc / scheduled) is
+    # a separate dimension and unaffected by a successful run.
+    if cur_status in ("draft", "rejected"):
         new_status = cur_status
     else:
         new_status = "approved"

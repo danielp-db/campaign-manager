@@ -188,12 +188,17 @@ def _ai_cron_input() -> html.Div:
 def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.Card:
     has_def = bool(campaign.get("results_table") or campaign.get("status") not in ("draft", None))
     cron = campaign.get("schedule_cron") or ""
+    run_mode = (campaign.get("run_mode") or "ad_hoc").lower()
+    is_scheduled = run_mode == "scheduled"
 
-    schedule_status = "—"
-    if campaign.get("schedule_cron"):
-        schedule_status = f"Active · {campaign.get('schedule_cron')}"
-    elif (campaign.get("status") or "").lower() == "scheduled":
-        schedule_status = "Scheduled (cron unset)"
+    if is_scheduled:
+        schedule_status = (
+            f"Active · {campaign.get('schedule_cron')}"
+            if campaign.get("schedule_cron")
+            else "Scheduled (cron unset)"
+        )
+    else:
+        schedule_status = "Manual / on-command only"
 
     runs_table: html.Div | dbc.Table = html.Div(
         "No runs yet.", className="text-muted small"
@@ -242,6 +247,28 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
                     dbc.Row(
                         [
                             dbc.Col(
+                                [
+                                    html.Div(
+                                        "Run mode", className="text-muted small mb-1"
+                                    ),
+                                    dbc.RadioItems(
+                                        id="info-run-mode",
+                                        options=[
+                                            {"label": "Ad Hoc · run on command", "value": "ad_hoc"},
+                                            {"label": "Scheduled · cron-driven", "value": "scheduled"},
+                                        ],
+                                        value=run_mode,
+                                        inline=True,
+                                    ),
+                                ],
+                                md=12,
+                            ),
+                        ],
+                        className="mb-3 g-2",
+                    ),
+                    dbc.Row(
+                        [
+                            dbc.Col(
                                 dbc.Button(
                                     "▶ Run Now",
                                     id="info-run-now",
@@ -263,6 +290,10 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
                         ],
                         className="mb-3 align-items-center g-2",
                     ),
+                    dbc.Collapse(
+                        id="info-schedule-collapse",
+                        is_open=is_scheduled,
+                        children=[
                     dbc.Tabs(
                         id="sb-tabs",
                         active_tab="builder",
@@ -332,6 +363,8 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
                             ),
                         ],
                         className="g-2 mt-2",
+                    ),
+                        ],
                     ),
                     # Hidden store: the canonical cron the user will save.
                     dcc.Store(id="info-cron-store", data=cron),
