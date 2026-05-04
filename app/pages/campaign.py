@@ -750,6 +750,59 @@ def _run_now(_n, campaign_id, session, refresh):
     if not _n or not campaign_id:
         return no_update, no_update
     user = (session or {}).get("user_email", "demo@databricks.com")
+    role = (session or {}).get("role", ROLE_MARKETER)
+    campaign = metadata.get_campaign(campaign_id) or {}
+    status = (campaign.get("status") or "").lower()
+
+    # Compliance: read-only preview, no UC write.
+    if role == ROLE_COMPLIANCE:
+        pdef = metadata.get_latest_pipeline_definition(campaign_id)
+        if not pdef:
+            return (
+                dbc.Alert("No pipeline saved yet — nothing to preview.", color="warning"),
+                no_update,
+            )
+        try:
+            pipeline = Pipeline.model_validate(pdef["dag"])
+            sql = compile_pipeline_preview(pipeline, limit=50)
+            df = uc.query_df(sql)
+        except Exception as exc:
+            return dbc.Alert(f"Preview failed: {exc}", color="danger"), no_update
+        if df.empty:
+            return (
+                dbc.Alert(
+                    "Pipeline compiled successfully but produced 0 rows.",
+                    color="info",
+                ),
+                no_update,
+            )
+        return (
+            dbc.Card(
+                [
+                    dbc.CardHeader(
+                        f"Compliance preview · top {len(df)} rows · NOT written to UC"
+                    ),
+                    dbc.CardBody(
+                        dbc.Table.from_dataframe(
+                            df, striped=True, hover=True, responsive=True, size="sm"
+                        ),
+                        style={"max-height": "440px", "overflow": "auto"},
+                    ),
+                ]
+            ),
+            no_update,
+        )
+
+    # Marketer: must be approved before running for real.
+    if status != "approved":
+        return (
+            dbc.Alert(
+                "Run is disabled until the campaign is approved by Compliance "
+                f"(current status: {status or 'unknown'}).",
+                color="warning",
+            ),
+            no_update,
+        )
     try:
         result = runner.run_campaign(campaign_id, user)
     except ValueError as e:
@@ -1002,6 +1055,9 @@ def _ai_convert(_n, description):
 def _set_run_mode(mode, campaign_id, session, refresh):
     if not campaign_id or mode not in ("ad_hoc", "scheduled"):
         return no_update, no_update, no_update
+    role = (session or {}).get("role", ROLE_MARKETER)
+    if role != ROLE_MARKETER:
+        return no_update, no_update, no_update
     user = (session or {}).get("user_email", "demo@databricks.com")
     metadata.update_campaign_run_mode(campaign_id, mode)
     metadata.append_audit(campaign_id, user, "run_mode_updated", {"mode": mode})
@@ -1030,6 +1086,12 @@ def _save_schedule(_save, _clear, cron, campaign_id, session, refresh):
     triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
     if not triggered_n or not campaign_id:
         return no_update, no_update
+    role = (session or {}).get("role", ROLE_MARKETER)
+    if role != ROLE_MARKETER:
+        return (
+            dbc.Alert("Compliance role can't edit the schedule.", color="warning", duration=3000),
+            no_update,
+        )
     triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
     if triggered == "info-cron-clear":

@@ -89,7 +89,7 @@ def info_panel(
             html.Div([save_btn, save_alert], className="mb-4"),
             dbc.Row(
                 [
-                    dbc.Col(_run_schedule_card(campaign, recent_runs), md=7),
+                    dbc.Col(_run_schedule_card(campaign, recent_runs, role), md=7),
                     dbc.Col(_approvals_card(campaign, approvals, role), md=5),
                 ],
                 className="g-3",
@@ -185,11 +185,41 @@ def _ai_cron_input() -> html.Div:
     )
 
 
-def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.Card:
-    has_def = bool(campaign.get("results_table") or campaign.get("status") not in ("draft", None))
+def _run_schedule_card(
+    campaign: dict, recent_runs: pd.DataFrame | None, role: str = ROLE_MARKETER
+) -> dbc.Card:
     cron = campaign.get("schedule_cron") or ""
+    status = (campaign.get("status") or "").lower()
     run_mode = (campaign.get("run_mode") or "ad_hoc").lower()
     is_scheduled = run_mode == "scheduled"
+    is_compliance = role == ROLE_COMPLIANCE
+    has_def = bool(
+        campaign.get("results_table") or status not in ("draft", "", None)
+    )
+
+    if is_compliance:
+        run_button = dbc.Button(
+            "🔎 Preview Run",
+            id="info-run-now",
+            color="info",
+            outline=True,
+            className="w-100",
+            disabled=not has_def,
+            title="Compliance preview — runs the pipeline read-only and shows rows without writing to UC.",
+        )
+    else:
+        run_button = dbc.Button(
+            "▶ Run Now",
+            id="info-run-now",
+            color="success",
+            className="w-100",
+            disabled=(status != "approved"),
+            title=(
+                "Run the pipeline and materialize results to Unity Catalog."
+                if status == "approved"
+                else "Run is disabled until the campaign is approved by Compliance."
+            ),
+        )
 
     if is_scheduled:
         schedule_status = (
@@ -244,40 +274,34 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
             dbc.CardHeader("Run & Schedule"),
             dbc.CardBody(
                 [
-                    dbc.Row(
-                        [
-                            dbc.Col(
-                                [
-                                    html.Div(
-                                        "Run mode", className="text-muted small mb-1"
-                                    ),
-                                    dbc.RadioItems(
-                                        id="info-run-mode",
-                                        options=[
-                                            {"label": "Ad Hoc · run on command", "value": "ad_hoc"},
-                                            {"label": "Scheduled · cron-driven", "value": "scheduled"},
-                                        ],
-                                        value=run_mode,
-                                        inline=True,
-                                    ),
-                                ],
-                                md=12,
-                            ),
-                        ],
-                        className="mb-3 g-2",
+                    html.Div(
+                        dbc.Row(
+                            [
+                                dbc.Col(
+                                    [
+                                        html.Div(
+                                            "Run mode", className="text-muted small mb-1"
+                                        ),
+                                        dbc.RadioItems(
+                                            id="info-run-mode",
+                                            options=[
+                                                {"label": "Ad Hoc · run on command", "value": "ad_hoc"},
+                                                {"label": "Scheduled · cron-driven", "value": "scheduled"},
+                                            ],
+                                            value=run_mode,
+                                            inline=True,
+                                        ),
+                                    ],
+                                    md=12,
+                                ),
+                            ],
+                            className="mb-3 g-2",
+                        ),
+                        style={"display": "none"} if is_compliance else {},
                     ),
                     dbc.Row(
                         [
-                            dbc.Col(
-                                dbc.Button(
-                                    "▶ Run Now",
-                                    id="info-run-now",
-                                    color="success",
-                                    className="w-100",
-                                    disabled=not has_def,
-                                ),
-                                md=4,
-                            ),
+                            dbc.Col(run_button, md=4),
                             dbc.Col(
                                 html.Div(
                                     [
@@ -292,7 +316,7 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
                     ),
                     dbc.Collapse(
                         id="info-schedule-collapse",
-                        is_open=is_scheduled,
+                        is_open=is_scheduled and not is_compliance,
                         children=[
                     dbc.Tabs(
                         id="sb-tabs",
