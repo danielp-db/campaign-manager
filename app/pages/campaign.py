@@ -355,6 +355,8 @@ def _preview_dataset(table_fqn):
     prevent_initial_call=True,
 )
 def _preview_pipeline_rows(_n, pipeline_data):
+    if not _n:
+        return no_update
     steps = (pipeline_data or {}).get("steps") or []
     if not steps:
         return dbc.Alert(
@@ -516,7 +518,7 @@ def _build_step(op: str, fields: dict) -> dict:
     prevent_initial_call=True,
 )
 def _submit_step(_n, state, values, ids, pipeline):
-    if not state:
+    if not _n or not state:
         return no_update, no_update, no_update
     fields = {idobj["key"]: v for v, idobj in zip(values, ids)}
     try:
@@ -611,6 +613,10 @@ def _delete_step(_clicks, pipeline):
     prevent_initial_call=True,
 )
 def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
+    triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
+    if not triggered_n:
+        # Spurious fire from layout re-render — only act on real clicks.
+        return no_update, no_update
     triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
     steps = (pipeline_data or {}).get("steps") or []
@@ -683,6 +689,9 @@ def _pipeline_action(_s, _p, _r, pipeline_data, campaign_id, session, refresh):
     prevent_initial_call=True,
 )
 def _approval_action(_s, _a, _r, comment, campaign_id, session, refresh):
+    triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
+    if not triggered_n:
+        return no_update, no_update
     triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
     role = (session or {}).get("role", ROLE_MARKETER)
@@ -718,6 +727,8 @@ def _approval_action(_s, _a, _r, comment, campaign_id, session, refresh):
     prevent_initial_call=True,
 )
 def _save_info(_n, name, priority, organization, owner, campaign_id, refresh):
+    if not _n:
+        return no_update, no_update
     metadata.update_campaign_info(campaign_id, name, priority, organization, owner)
     return (
         dbc.Alert("Saved.", color="success", duration=2500, className="mt-2"),
@@ -735,7 +746,7 @@ def _save_info(_n, name, priority, organization, owner, campaign_id, refresh):
     prevent_initial_call=True,
 )
 def _run_now(_n, campaign_id, session, refresh):
-    if not campaign_id:
+    if not _n or not campaign_id:
         return no_update, no_update
     user = (session or {}).get("user_email", "demo@databricks.com")
     try:
@@ -831,6 +842,8 @@ def _derive_cron(active_tab, freq, hour, minute, dow, dom, custom, ai_output, cu
     prevent_initial_call=True,
 )
 def _ai_convert(_n, description):
+    if not _n:
+        return no_update, no_update, no_update
     if not (description or "").strip():
         return (
             dbc.Alert("Describe a schedule first.", color="warning", duration=3000),
@@ -869,7 +882,8 @@ def _ai_convert(_n, description):
     prevent_initial_call=True,
 )
 def _save_schedule(_save, _clear, cron, campaign_id, session, refresh):
-    if not campaign_id:
+    triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
+    if not triggered_n or not campaign_id:
         return no_update, no_update
     triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
