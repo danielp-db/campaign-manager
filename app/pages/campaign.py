@@ -74,7 +74,7 @@ def layout(campaign_id: str = "new", **_):
     Output("campaign-shell", "children"),
     Input("campaign-id-store", "data"),
     Input("campaign-refresh", "data"),
-    State("session-store", "data"),
+    Input("session-store", "data"),
 )
 def _render_detail(campaign_id: str, _refresh, session: dict | None):
     role = (session or {}).get("role", ROLE_MARKETER)
