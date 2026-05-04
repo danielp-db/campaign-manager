@@ -20,7 +20,7 @@ from app.components.step_forms import OP_LABELS, render_form_body
 from app.compiler import Pipeline, compile_pipeline, compile_pipeline_preview
 from app.compiler.pipeline import CompileError
 from app.config import SETTINGS
-from app.services import metadata, runner, uc
+from app.services import columns, metadata, runner, uc
 
 dash.register_page(__name__, path_template="/campaign/<campaign_id>", name="Campaign")
 
@@ -208,7 +208,18 @@ def _render_modal(state, pipeline, uc_tables):
     else:
         names = [s["name"] for s in steps]
 
-    body = render_form_body(op, names, uc_tables or [], step_dict)
+    # Pre-compute columns for any pre-set from/left/right so dropdowns are populated on open.
+    columns_for: dict[str, list[str]] = {}
+    if step_dict:
+        if op in ("filter", "field", "select", "aggregate") and step_dict.get("from"):
+            columns_for["from"] = columns.get_step_columns(pipeline, step_dict["from"])
+        if op == "join":
+            if step_dict.get("left"):
+                columns_for["left"] = columns.get_step_columns(pipeline, step_dict["left"])
+            if step_dict.get("right"):
+                columns_for["right"] = columns.get_step_columns(pipeline, step_dict["right"])
+
+    body = render_form_body(op, names, uc_tables or [], step_dict, columns_for)
     return True, title, body
 
 
@@ -225,6 +236,55 @@ def _toggle_dataset_source(source):
     if source == "file":
         return {"display": "none"}, {"display": "block"}
     return {"display": "block"}, {"display": "none"}
+
+
+# --- Logic tab: live column dropdown updates ---------------------------
+
+
+@callback(
+    Output({"role": "step-form", "key": ALL}, "options"),
+    Input({"role": "step-form", "key": "from"}, "value"),
+    Input({"role": "step-form", "key": "left"}, "value"),
+    Input({"role": "step-form", "key": "right"}, "value"),
+    State({"role": "step-form", "key": ALL}, "id"),
+    State({"role": "step-form", "key": ALL}, "options"),
+    State("pipeline-store", "data"),
+    prevent_initial_call=True,
+)
+def _update_column_options(from_val, left_val, right_val, ids, current_options, pipeline_data):
+    keys_present = {idobj["key"] for idobj in ids}
+    needs_from = bool(keys_present & {"column", "group_by"})
+    needs_left = "left_key" in keys_present
+    needs_right = "right_key" in keys_present
+
+    cols_from = (
+        columns.get_step_columns(pipeline_data, from_val)
+        if (needs_from and from_val)
+        else []
+    )
+    cols_left = (
+        columns.get_step_columns(pipeline_data, left_val)
+        if (needs_left and left_val)
+        else []
+    )
+    cols_right = (
+        columns.get_step_columns(pipeline_data, right_val)
+        if (needs_right and right_val)
+        else []
+    )
+
+    out: list = []
+    for idobj, cur in zip(ids, current_options):
+        key = idobj["key"]
+        if key in ("column", "group_by"):
+            out.append([{"label": c, "value": c} for c in cols_from])
+        elif key == "left_key":
+            out.append([{"label": c, "value": c} for c in cols_left])
+        elif key == "right_key":
+            out.append([{"label": c, "value": c} for c in cols_right])
+        else:
+            out.append(no_update)
+    return out
 
 
 # --- Logic tab: dataset preview (top 10 rows of selected UC table) ------
@@ -372,13 +432,19 @@ def _build_step(op: str, fields: dict) -> dict:
             "columns": _parse_columns_text(fields.get("columns_text", "")),
         }
     if op == "join":
+        primary = []
+        lkey = (fields.get("left_key") or "").strip()
+        rkey = (fields.get("right_key") or "").strip()
+        if lkey and rkey:
+            primary.append({"left": lkey, "right": rkey})
+        primary.extend(_parse_keys_text(fields.get("extra_keys_text", "")))
         return {
             "op": "join",
             "name": name,
             "left": (fields.get("left") or "").strip(),
             "right": (fields.get("right") or "").strip(),
             "join_type": fields.get("join_type") or "INNER",
-            "keys": _parse_keys_text(fields.get("keys_text", "")),
+            "keys": primary,
         }
     if op == "union":
         return {
@@ -386,6 +452,28 @@ def _build_step(op: str, fields: dict) -> dict:
             "name": name,
             "left": (fields.get("left") or "").strip(),
             "right": (fields.get("right") or "").strip(),
+        }
+    if op == "aggregate":
+        agg_lines = [
+            line.strip()
+            for line in (fields.get("aggregations_text") or "").splitlines()
+            if line.strip()
+        ]
+        gb = fields.get("group_by") or []
+        if isinstance(gb, str):
+            gb = [gb]
+        return {
+            "op": "aggregate",
+            "name": name,
+            "from": (fields.get("from") or "").strip(),
+            "group_by": [c for c in gb if c],
+            "aggregations": agg_lines,
+        }
+    if op == "custom":
+        return {
+            "op": "custom",
+            "name": name,
+            "sql": (fields.get("sql") or "").strip(),
         }
     raise ValueError(f"unknown op: {op}")
 

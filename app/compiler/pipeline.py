@@ -79,8 +79,29 @@ class UnionStep(_StepBase):
     right: str
 
 
+class AggregateStep(_StepBase):
+    op: Literal["aggregate"] = "aggregate"
+    from_: str = Field(..., alias="from")
+    group_by: list[str] = Field(default_factory=list)
+    aggregations: list[str]  # full SQL exprs, e.g. "COUNT(*) AS leads"
+
+
+class CustomStep(_StepBase):
+    op: Literal["custom"] = "custom"
+    sql: str  # full SELECT body referencing earlier step names
+
+
 Step = Annotated[
-    Union[DatasetStep, FilterStep, FieldStep, SelectStep, JoinStep, UnionStep],
+    Union[
+        DatasetStep,
+        FilterStep,
+        FieldStep,
+        SelectStep,
+        JoinStep,
+        UnionStep,
+        AggregateStep,
+        CustomStep,
+    ],
     Field(discriminator="op"),
 ]
 
@@ -203,6 +224,26 @@ def _step_sql(step: Step) -> str:
         _check_ident(step.right, f"union {step.name} right")
         return f"SELECT * FROM {step.left} UNION ALL SELECT * FROM {step.right}"
 
+    if isinstance(step, AggregateStep):
+        _check_ident(step.from_, f"aggregate {step.name} from")
+        if not step.aggregations:
+            raise CompileError(f"aggregate {step.name}: at least one aggregation expression required")
+        for c in step.group_by:
+            _check_ident(c, f"aggregate {step.name} group_by column")
+        for agg in step.aggregations:
+            _check_safe(agg, f"aggregate {step.name} aggregation")
+        select_parts = list(step.group_by) + [f"({a})" if " AS " not in a.upper() else a for a in step.aggregations]
+        sql = f"SELECT {', '.join(select_parts)} FROM {step.from_}"
+        if step.group_by:
+            sql += f" GROUP BY {', '.join(step.group_by)}"
+        return sql
+
+    if isinstance(step, CustomStep):
+        if not step.sql or not step.sql.strip():
+            raise CompileError(f"custom {step.name}: SQL body is empty")
+        _check_safe(step.sql, f"custom {step.name} sql")
+        return step.sql.strip()
+
     raise CompileError(f"unknown step type: {type(step).__name__}")
 
 
@@ -218,7 +259,7 @@ def _validate(p: Pipeline) -> None:
     upstream: set[str] = set()
     for s in p.steps:
         refs: list[tuple[str, str]] = []
-        if isinstance(s, (FilterStep, FieldStep, SelectStep)):
+        if isinstance(s, (FilterStep, FieldStep, SelectStep, AggregateStep)):
             refs.append(("from", s.from_))
         elif isinstance(s, (JoinStep, UnionStep)):
             refs.append(("left", s.left))
@@ -229,6 +270,8 @@ def _validate(p: Pipeline) -> None:
                     f"step {s.name}: {kind} references unknown step {ref!r} "
                     f"(must be defined earlier)"
                 )
+        # CustomStep references aren't statically validated — Spark will fail
+        # at runtime if referenced step names don't exist.
         upstream.add(s.name)
 
 

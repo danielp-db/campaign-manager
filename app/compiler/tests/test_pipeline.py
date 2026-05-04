@@ -1,7 +1,9 @@
 import pytest
 
 from app.compiler.pipeline import (
+    AggregateStep,
     CompileError,
+    CustomStep,
     DatasetStep,
     FieldStep,
     FilterStep,
@@ -198,6 +200,65 @@ def test_preview_targets_specific_step():
     assert "SELECT * FROM f LIMIT 50" in sql
     assert "g AS (" not in sql  # later step excluded
     assert "CREATE OR REPLACE" not in sql
+
+
+def test_aggregate_step():
+    p = Pipeline(
+        steps=[
+            DatasetStep(name="s", source="uc", table_fqn=SUBS),
+            AggregateStep(
+                name="by_region",
+                **{"from": "s"},
+                group_by=["region", "segment"],
+                aggregations=["COUNT(*) AS leads", "SUM(arpu) AS total_arpu"],
+            ),
+        ]
+    )
+    sql = compile_pipeline(p, TARGET)
+    assert "SELECT region, segment, COUNT(*) AS leads, SUM(arpu) AS total_arpu FROM s" in sql
+    assert "GROUP BY region, segment" in sql
+
+
+def test_aggregate_no_group_by():
+    p = Pipeline(
+        steps=[
+            DatasetStep(name="s", source="uc", table_fqn=SUBS),
+            AggregateStep(
+                name="totals",
+                **{"from": "s"},
+                group_by=[],
+                aggregations=["COUNT(*) AS n"],
+            ),
+        ]
+    )
+    sql = compile_pipeline(p, TARGET)
+    assert "SELECT COUNT(*) AS n FROM s" in sql
+    assert "GROUP BY" not in sql
+
+
+def test_custom_step():
+    p = Pipeline(
+        steps=[
+            DatasetStep(name="s", source="uc", table_fqn=SUBS),
+            CustomStep(
+                name="weird",
+                sql="SELECT subscriber_id, RANK() OVER (PARTITION BY region ORDER BY arpu DESC) AS rnk FROM s",
+            ),
+        ]
+    )
+    sql = compile_pipeline(p, TARGET)
+    assert "RANK() OVER" in sql
+    assert "weird AS (" in sql
+
+
+def test_custom_rejects_forbidden_token():
+    p = Pipeline(
+        steps=[
+            CustomStep(name="bad", sql="SELECT 1; DROP TABLE foo"),
+        ]
+    )
+    with pytest.raises(CompileError, match="forbidden"):
+        compile_pipeline(p, TARGET)
 
 
 def test_alias_serialization_roundtrip():

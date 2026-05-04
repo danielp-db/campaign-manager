@@ -29,6 +29,8 @@ OP_BUTTONS = [
     ("select", "+ Select Field", "secondary"),
     ("join", "+ Join", "danger"),
     ("union", "+ Union", "success"),
+    ("aggregate", "+ Aggregate", "dark"),
+    ("custom", "+ Custom Transformation", "secondary"),
 ]
 
 
@@ -68,6 +70,16 @@ def _step_summary(step: dict) -> str:
         return f"{step.get('left', '?')} {step.get('join_type', '?')} JOIN {step.get('right', '?')} ON {on}"
     if op == "union":
         return f"{step.get('left', '?')} UNION ALL {step.get('right', '?')}"
+    if op == "aggregate":
+        gb = ", ".join(step.get("group_by") or []) or "(no group)"
+        aggs = step.get("aggregations") or []
+        bits = aggs[:2]
+        more = f" + {len(aggs) - 2} more" if len(aggs) > 2 else ""
+        return f"from {step.get('from', '?')} · GROUP BY {gb} · {' | '.join(bits)}{more}"
+    if op == "custom":
+        sql = (step.get("sql") or "").splitlines()
+        first = sql[0].strip() if sql else "(empty)"
+        return first[:80] + ("..." if len(first) > 80 else "")
     return ""
 
 

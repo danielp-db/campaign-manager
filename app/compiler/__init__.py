@@ -1,5 +1,7 @@
 from app.compiler.pipeline import (
+    AggregateStep,
     CompileError,
+    CustomStep,
     DatasetStep,
     FieldStep,
     FilterStep,
@@ -14,7 +16,9 @@ from app.compiler.pipeline import (
 )
 
 __all__ = [
+    "AggregateStep",
     "CompileError",
+    "CustomStep",
     "DatasetStep",
     "FieldStep",
     "FilterStep",

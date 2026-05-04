@@ -1,9 +1,4 @@
-"""Modal form bodies for adding/editing pipeline steps.
-
-Each `*_form` returns the modal body for one operation type. Inputs use
-pattern-matching IDs so a single submit callback can read all values:
-    {"role": "step-form", "key": "<field_name>"}
-"""
+"""Modal form bodies for adding/editing pipeline steps."""
 from __future__ import annotations
 
 import dash_bootstrap_components as dbc
@@ -17,6 +12,8 @@ OP_LABELS = {
     "select": "Select Field",
     "join": "Add Join",
     "union": "Add Union",
+    "aggregate": "Add Aggregate",
+    "custom": "Add Custom Transformation",
 }
 
 OP_BADGE_COLORS = {
@@ -26,6 +23,8 @@ OP_BADGE_COLORS = {
     "select": "secondary",
     "join": "danger",
     "union": "success",
+    "aggregate": "dark",
+    "custom": "secondary",
 }
 
 FILTER_OPERATORS = [
@@ -74,6 +73,26 @@ def _from_dropdown(label: str, key: str, names: list[str], value: str = "") -> l
             options=[{"label": n, "value": n} for n in names],
             value=value or None,
             placeholder=f"Select a {label.lower()}",
+        ),
+    ]
+
+
+def _column_dropdown(
+    key: str,
+    label: str,
+    columns: list[str],
+    value: str = "",
+    placeholder: str = "Pick a column",
+    multi: bool = False,
+) -> list:
+    return [
+        dbc.Label(label, className="small"),
+        dcc.Dropdown(
+            id={"role": "step-form", "key": key},
+            options=[{"label": c, "value": c} for c in columns],
+            value=(value or []) if multi else (value or None),
+            placeholder=placeholder,
+            multi=multi,
         ),
     ]
 
@@ -141,7 +160,7 @@ def dataset_form(uc_tables: list[str], step: dict | None = None) -> html.Div:
     )
 
 
-def filter_form(names: list[str], step: dict | None = None) -> html.Div:
+def filter_form(names: list[str], from_columns: list[str], step: dict | None = None) -> html.Div:
     s = step or {}
     return html.Div(
         [
@@ -150,14 +169,7 @@ def filter_form(names: list[str], step: dict | None = None) -> html.Div:
                 [
                     dbc.Col(_from_dropdown("From", "from", names, s.get("from", "")), md=6),
                     dbc.Col(
-                        [
-                            dbc.Label("Column", className="small"),
-                            dbc.Input(
-                                id={"role": "step-form", "key": "column"},
-                                value=s.get("column", ""),
-                                placeholder="column_name",
-                            ),
-                        ],
+                        _column_dropdown("column", "Column", from_columns, s.get("column", "")),
                         md=6,
                     ),
                 ],
@@ -200,8 +212,15 @@ def filter_form(names: list[str], step: dict | None = None) -> html.Div:
     )
 
 
-def field_form(names: list[str], step: dict | None = None) -> html.Div:
+def field_form(
+    names: list[str], from_columns: list[str], step: dict | None = None
+) -> html.Div:
     s = step or {}
+    hint = ""
+    if from_columns:
+        hint = "Available columns: " + ", ".join(from_columns[:20])
+        if len(from_columns) > 20:
+            hint += f" (+{len(from_columns) - 20} more)"
     return html.Div(
         [
             _name_field(s.get("name", "")),
@@ -231,14 +250,16 @@ def field_form(names: list[str], step: dict | None = None) -> html.Div:
                 rows=3,
             ),
             html.Div(
-                "Any valid Spark SQL expression referencing columns from the input dataset.",
+                hint or "Pick a 'From' dataset to see available columns.",
                 className="form-text",
             ),
         ]
     )
 
 
-def select_form(names: list[str], step: dict | None = None) -> html.Div:
+def select_form(
+    names: list[str], from_columns: list[str], step: dict | None = None
+) -> html.Div:
     s = step or {}
     columns_text = ""
     for c in s.get("columns") or []:
@@ -246,6 +267,11 @@ def select_form(names: list[str], step: dict | None = None) -> html.Div:
             columns_text += f"{c['column']} AS {c['alias']}\n"
         else:
             columns_text += f"{c['column']}\n"
+    hint = ""
+    if from_columns:
+        hint = "Available columns: " + ", ".join(from_columns[:20])
+        if len(from_columns) > 20:
+            hint += f" (+{len(from_columns) - 20} more)"
     return html.Div(
         [
             _name_field(s.get("name", "")),
@@ -259,14 +285,26 @@ def select_form(names: list[str], step: dict | None = None) -> html.Div:
                 style={"font-family": "monospace", "font-size": 13},
                 rows=6,
             ),
+            html.Div(
+                hint or "Pick a 'From' dataset to see available columns.",
+                className="form-text",
+            ),
         ]
     )
 
 
-def join_form(names: list[str], step: dict | None = None) -> html.Div:
+def join_form(
+    names: list[str],
+    left_columns: list[str],
+    right_columns: list[str],
+    step: dict | None = None,
+) -> html.Div:
     s = step or {}
     keys = s.get("keys") or [{"left": "", "right": ""}]
-    keys_text = "\n".join(f"{k.get('left', '')} = {k.get('right', '')}" for k in keys)
+    first_key = keys[0] if keys else {"left": "", "right": ""}
+    extra_keys_text = ""
+    for k in keys[1:]:
+        extra_keys_text += f"{k.get('left', '')} = {k.get('right', '')}\n"
     return html.Div(
         [
             _name_field(s.get("name", "")),
@@ -289,13 +327,39 @@ def join_form(names: list[str], step: dict | None = None) -> html.Div:
                 ],
                 className="g-2 mb-3",
             ),
-            dbc.Label("Join keys (one per line, `left_col = right_col`)", className="small"),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        _column_dropdown(
+                            "left_key",
+                            "Left key",
+                            left_columns,
+                            first_key.get("left", ""),
+                        ),
+                        md=6,
+                    ),
+                    dbc.Col(
+                        _column_dropdown(
+                            "right_key",
+                            "Right key",
+                            right_columns,
+                            first_key.get("right", ""),
+                        ),
+                        md=6,
+                    ),
+                ],
+                className="g-2 mb-3",
+            ),
+            dbc.Label(
+                "Additional keys (optional, one per line `left_col = right_col`)",
+                className="small",
+            ),
             dbc.Textarea(
-                id={"role": "step-form", "key": "keys_text"},
-                value=keys_text.strip(),
-                placeholder="account_id = account_id\nregion = region",
+                id={"role": "step-form", "key": "extra_keys_text"},
+                value=extra_keys_text.strip(),
+                placeholder="region = region\nplan = plan",
                 style={"font-family": "monospace", "font-size": 13},
-                rows=4,
+                rows=2,
             ),
         ]
     )
@@ -322,22 +386,97 @@ def union_form(names: list[str], step: dict | None = None) -> html.Div:
     )
 
 
+def aggregate_form(
+    names: list[str], from_columns: list[str], step: dict | None = None
+) -> html.Div:
+    s = step or {}
+    aggregations_text = "\n".join(s.get("aggregations") or [])
+    return html.Div(
+        [
+            _name_field(s.get("name", "")),
+            *_from_dropdown("From", "from", names, s.get("from", "")),
+            html.Div(className="mb-3"),
+            *_column_dropdown(
+                "group_by",
+                "Group by columns",
+                from_columns,
+                s.get("group_by", []),
+                placeholder="Pick one or more columns (or none for global aggregate)",
+                multi=True,
+            ),
+            html.Div(className="mb-3"),
+            dbc.Label("Aggregations (one per line, full SQL expression)", className="small"),
+            dbc.Textarea(
+                id={"role": "step-form", "key": "aggregations_text"},
+                value=aggregations_text,
+                placeholder="COUNT(*) AS leads\nSUM(arpu) AS total_arpu\nAVG(tenure_months) AS avg_tenure",
+                style={"font-family": "monospace", "font-size": 13},
+                rows=5,
+            ),
+            html.Div(
+                "Each line becomes a SELECT expression. Functions: COUNT, SUM, AVG, MIN, MAX, COUNT(DISTINCT col), …",
+                className="form-text",
+            ),
+        ]
+    )
+
+
+def custom_form(names: list[str], step: dict | None = None) -> html.Div:
+    s = step or {}
+    available = ", ".join(names) if names else "(none yet)"
+    return html.Div(
+        [
+            _name_field(s.get("name", "")),
+            dbc.Label("SQL body — your CTE definition", className="small"),
+            dbc.Textarea(
+                id={"role": "step-form", "key": "sql"},
+                value=s.get("sql", ""),
+                placeholder=(
+                    "SELECT a.subscriber_id, a.region, b.industry\n"
+                    "FROM step_a AS a\n"
+                    "LEFT JOIN step_b AS b USING (account_id)"
+                ),
+                style={"font-family": "monospace", "font-size": 13},
+                rows=10,
+            ),
+            html.Div(
+                [
+                    "Reference earlier steps by name. Available: ",
+                    html.Code(available),
+                    ". Forbidden tokens: ",
+                    html.Code(";"),
+                    ", ",
+                    html.Code("--"),
+                    ".",
+                ],
+                className="form-text",
+            ),
+        ]
+    )
+
+
 def render_form_body(
     op: str,
     pipeline_names: list[str],
     uc_tables: list[str],
     step: dict | None = None,
+    columns_for: dict[str, list[str]] | None = None,
 ) -> html.Div:
+    cols = columns_for or {}
     if op == "dataset":
         return dataset_form(uc_tables, step)
     if op == "filter":
-        return filter_form(pipeline_names, step)
+        return filter_form(pipeline_names, cols.get("from", []), step)
     if op == "field":
-        return field_form(pipeline_names, step)
+        return field_form(pipeline_names, cols.get("from", []), step)
     if op == "select":
-        return select_form(pipeline_names, step)
+        return select_form(pipeline_names, cols.get("from", []), step)
     if op == "join":
-        return join_form(pipeline_names, step)
+        return join_form(pipeline_names, cols.get("left", []), cols.get("right", []), step)
     if op == "union":
         return union_form(pipeline_names, step)
+    if op == "aggregate":
+        return aggregate_form(pipeline_names, cols.get("from", []), step)
+    if op == "custom":
+        return custom_form(pipeline_names, step)
     return html.Div(f"Unknown operation: {op}", className="text-danger")
