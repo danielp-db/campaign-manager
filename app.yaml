@@ -13,3 +13,5 @@ env:
     value: prospectorpro
   - name: PROSPECTORPRO_PIPELINE_JOB_ID
     valueFrom: pipeline-job
+  - name: PROSPECTORPRO_GENIE_SPACE_ID
+    value: 01f14754a2b81492beef965eb83559f8

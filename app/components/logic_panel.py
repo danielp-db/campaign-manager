@@ -235,8 +235,74 @@ def add_step_buttons() -> html.Div:
                 className="me-2 mb-2",
             )
             for op, label, color in OP_BUTTONS
+        ]
+        + [
+            dbc.Button(
+                "✨ Generate with Genie",
+                id="open-genie-modal",
+                color="info",
+                className="me-2 mb-2",
+            )
         ],
         className="mb-3",
+    )
+
+
+def genie_modal() -> dbc.Modal:
+    return dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("✨ Generate Logic with Genie")),
+            dbc.ModalBody(
+                [
+                    html.Div(
+                        [
+                            "Describe your campaign in plain English. Genie will translate it to SQL "
+                            "over the ProspectorPro tables; we'll add the result as a Custom Transformation step."
+                        ],
+                        className="text-muted small mb-3",
+                    ),
+                    dbc.Label("Description", className="small"),
+                    dbc.Textarea(
+                        id="genie-question",
+                        placeholder=(
+                            "e.g. Find Texas customers with churn risk above 0.6 and at "
+                            "least 24 months tenure"
+                        ),
+                        rows=3,
+                    ),
+                    dbc.Label("Step name", className="small mt-3"),
+                    dbc.Input(
+                        id="genie-step-name",
+                        value="genie_step",
+                        placeholder="genie_step",
+                    ),
+                    dcc.Loading(html.Div(id="genie-result", className="mt-3"), type="dot"),
+                    dcc.Store(id="genie-sql-store", data=None),
+                ]
+            ),
+            dbc.ModalFooter(
+                [
+                    dbc.Button("Close", id="genie-modal-close", color="secondary", outline=True),
+                    dbc.Button(
+                        "✨ Ask Genie",
+                        id="genie-ask",
+                        color="info",
+                        className="ms-2",
+                    ),
+                    dbc.Button(
+                        "Use as Custom Step",
+                        id="genie-use",
+                        color="primary",
+                        disabled=True,
+                        className="ms-2",
+                    ),
+                ]
+            ),
+        ],
+        id="genie-modal",
+        is_open=False,
+        size="lg",
+        backdrop="static",
     )
 
 
@@ -280,5 +346,6 @@ def logic_panel(pipeline: dict | None = None) -> html.Div:
             ),
             action_bar(),
             step_modal(),
+            genie_modal(),
         ]
     )

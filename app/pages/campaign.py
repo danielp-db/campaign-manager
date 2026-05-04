@@ -20,7 +20,7 @@ from app.components.step_forms import OP_LABELS, render_form_body
 from app.compiler import Pipeline, compile_pipeline, compile_pipeline_preview
 from app.compiler.pipeline import CompileError
 from app.config import SETTINGS
-from app.services import ai_cron, columns, metadata, runner, uc
+from app.services import ai_cron, columns, genie, metadata, runner, uc
 
 dash.register_page(__name__, path_template="/campaign/<campaign_id>", name="Campaign")
 
@@ -766,6 +766,124 @@ def _run_now(_n, campaign_id, session, refresh):
             duration=6000,
         ),
         (refresh or 0) + 1,
+    )
+
+
+# --- Genie: open / close / ask / use ------------------------------------
+
+
+@callback(
+    Output("genie-modal", "is_open"),
+    Output("genie-result", "children", allow_duplicate=True),
+    Output("genie-sql-store", "data", allow_duplicate=True),
+    Output("genie-question", "value"),
+    Input("open-genie-modal", "n_clicks"),
+    Input("genie-modal-close", "n_clicks"),
+    State("genie-modal", "is_open"),
+    prevent_initial_call=True,
+)
+def _toggle_genie_modal(_open_n, _close_n, is_open):
+    triggered = ctx.triggered_id
+    triggered_n = ctx.triggered[0].get("value") if ctx.triggered else None
+    if not triggered_n:
+        return no_update, no_update, no_update, no_update
+    if triggered == "open-genie-modal":
+        return True, html.Div(), None, ""
+    return False, no_update, no_update, no_update
+
+
+@callback(
+    Output("genie-result", "children"),
+    Output("genie-sql-store", "data"),
+    Output("genie-use", "disabled"),
+    Input("genie-ask", "n_clicks"),
+    State("genie-question", "value"),
+    prevent_initial_call=True,
+)
+def _genie_ask(_n, question):
+    if not _n:
+        return no_update, no_update, no_update
+    if not (question or "").strip():
+        return (
+            dbc.Alert("Type a description first.", color="warning", duration=3000),
+            None,
+            True,
+        )
+    try:
+        result = genie.ask(question)
+    except genie.GenieError as exc:
+        return dbc.Alert(f"Genie: {exc}", color="danger"), None, True
+    sql = result["sql"]
+    title = result.get("title") or ""
+    descr = result.get("description") or ""
+    body = [
+        html.Div(
+            [
+                dbc.Badge("Genie ✨", color="info", className="me-2"),
+                html.Strong(title or "Generated SQL"),
+            ],
+            className="mb-2",
+        ),
+    ]
+    if descr:
+        body.append(html.Div(descr, className="text-muted small mb-2"))
+    body.append(
+        html.Pre(
+            sql,
+            style={
+                "white-space": "pre-wrap",
+                "font-size": 13,
+                "background": "#f8f9fa",
+                "padding": "12px",
+                "border-radius": "6px",
+                "max-height": "320px",
+                "overflow": "auto",
+            },
+        )
+    )
+    return html.Div(body), sql, False
+
+
+@callback(
+    Output("pipeline-store", "data", allow_duplicate=True),
+    Output("genie-modal", "is_open", allow_duplicate=True),
+    Output("pipeline-action-output", "children", allow_duplicate=True),
+    Input("genie-use", "n_clicks"),
+    State("genie-sql-store", "data"),
+    State("genie-step-name", "value"),
+    State("pipeline-store", "data"),
+    prevent_initial_call=True,
+)
+def _genie_use(_n, sql, name, pipeline):
+    if not _n or not sql:
+        return no_update, no_update, no_update
+    safe_name = (name or "genie_step").strip() or "genie_step"
+    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", safe_name):
+        return (
+            no_update,
+            no_update,
+            dbc.Alert(
+                f"Invalid step name: {safe_name!r}. Letters, digits, underscores only.",
+                color="danger",
+            ),
+        )
+    steps = list((pipeline or {}).get("steps") or [])
+    # Auto-disambiguate if name collides
+    base = safe_name
+    n = 2
+    existing = {s["name"] for s in steps}
+    while safe_name in existing:
+        safe_name = f"{base}_{n}"
+        n += 1
+    new_step = {"op": "custom", "name": safe_name, "sql": sql.strip()}
+    return (
+        {"steps": steps + [new_step]},
+        False,
+        dbc.Alert(
+            f"Added step '{safe_name}' from Genie. Save the pipeline when ready.",
+            color="success",
+            duration=4500,
+        ),
     )
 
 
