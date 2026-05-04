@@ -1000,7 +1000,10 @@ def _genie_use(_n, sql, name, pipeline):
     while safe_name in existing:
         safe_name = f"{base}_{n}"
         n += 1
-    new_step = {"op": "custom", "name": safe_name, "sql": sql.strip()}
+    # Genie often returns a trailing ; — strip it (and any whitespace around it)
+    # because the compiler treats ; / -- as forbidden injection tokens.
+    cleaned_sql = sql.strip().rstrip(";").strip()
+    new_step = {"op": "custom", "name": safe_name, "sql": cleaned_sql}
     return (
         {"steps": steps + [new_step]},
         False,

@@ -261,6 +261,19 @@ def test_custom_rejects_forbidden_token():
         compile_pipeline(p, TARGET)
 
 
+def test_custom_strips_trailing_semicolon():
+    p = Pipeline(
+        steps=[
+            DatasetStep(name="s", source="uc", table_fqn=SUBS),
+            CustomStep(name="step1", sql="SELECT * FROM s WHERE region = 'TX';"),
+        ]
+    )
+    sql = compile_pipeline(p, TARGET)
+    assert "SELECT * FROM s WHERE region = 'TX'" in sql
+    # The trailing ; was stripped, so the safety check passes
+    assert ";\n)" not in sql  # no stray semicolon inside the CTE body
+
+
 def test_alias_serialization_roundtrip():
     """Ensure 'from' alias works on validate + dump."""
     p = Pipeline.model_validate(

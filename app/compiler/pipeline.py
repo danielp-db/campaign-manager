@@ -241,8 +241,11 @@ def _step_sql(step: Step) -> str:
     if isinstance(step, CustomStep):
         if not step.sql or not step.sql.strip():
             raise CompileError(f"custom {step.name}: SQL body is empty")
-        _check_safe(step.sql, f"custom {step.name} sql")
-        return step.sql.strip()
+        # Tolerate a trailing semicolon (LLM/SQL editor habit). Mid-body ';'
+        # still trips the safety check below.
+        cleaned = step.sql.strip().rstrip(";").strip()
+        _check_safe(cleaned, f"custom {step.name} sql")
+        return cleaned
 
     raise CompileError(f"unknown step type: {type(step).__name__}")
 
