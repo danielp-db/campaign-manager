@@ -7,6 +7,7 @@ from dash import dcc, html
 
 from app.auth import ROLE_COMPLIANCE, ROLE_MARKETER
 from app.components.campaign_table import format_int, status_badge
+from app.services.ai_cron import DAYS_OF_WEEK, FREQUENCIES
 
 
 def stat_card(label: str, value: str) -> dbc.Card:
@@ -97,6 +98,93 @@ def info_panel(
     )
 
 
+def _schedule_builder() -> html.Div:
+    return html.Div(
+        [
+            dbc.Row(
+                [
+                    dbc.Col(
+                        [
+                            dbc.Label("Repeat", className="small"),
+                            dcc.Dropdown(
+                                id="sb-frequency",
+                                options=FREQUENCIES,
+                                value="daily",
+                                clearable=False,
+                            ),
+                        ],
+                        md=3,
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Hour (24h)", className="small"),
+                            dbc.Input(
+                                id="sb-hour", type="number", min=0, max=23, value=6, step=1
+                            ),
+                        ],
+                        md=2,
+                        id="sb-hour-col",
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Minute", className="small"),
+                            dbc.Input(
+                                id="sb-minute", type="number", min=0, max=59, value=0, step=1
+                            ),
+                        ],
+                        md=2,
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Day of week", className="small"),
+                            dcc.Dropdown(
+                                id="sb-dow",
+                                options=DAYS_OF_WEEK,
+                                value="MON",
+                                clearable=False,
+                            ),
+                        ],
+                        md=3,
+                        id="sb-dow-col",
+                    ),
+                    dbc.Col(
+                        [
+                            dbc.Label("Day of month", className="small"),
+                            dbc.Input(
+                                id="sb-dom", type="number", min=1, max=31, value=1, step=1
+                            ),
+                        ],
+                        md=2,
+                        id="sb-dom-col",
+                    ),
+                ],
+                className="g-2",
+            ),
+        ]
+    )
+
+
+def _ai_cron_input() -> html.Div:
+    return html.Div(
+        [
+            dbc.InputGroup(
+                [
+                    dbc.Input(
+                        id="sb-ai-text",
+                        placeholder="e.g. every Monday at 9 AM, or every 15 minutes",
+                    ),
+                    dbc.Button("✨ Convert", id="sb-ai-convert", color="info"),
+                ]
+            ),
+            html.Div(
+                "Powered by Databricks ai_query with a foundation model.",
+                className="form-text",
+            ),
+            html.Div(id="sb-ai-output", className="mt-2"),
+        ]
+    )
+
+
 def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.Card:
     has_def = bool(campaign.get("results_table") or campaign.get("status") not in ("draft", None))
     cron = campaign.get("schedule_cron") or ""
@@ -175,30 +263,78 @@ def _run_schedule_card(campaign: dict, recent_runs: pd.DataFrame | None) -> dbc.
                         ],
                         className="mb-3 align-items-center g-2",
                     ),
-                    dbc.Label("Schedule (Quartz cron — empty to clear)", className="small"),
+                    dbc.Tabs(
+                        id="sb-tabs",
+                        active_tab="builder",
+                        children=[
+                            dbc.Tab(
+                                html.Div(_schedule_builder(), className="pt-3"),
+                                label="Builder",
+                                tab_id="builder",
+                            ),
+                            dbc.Tab(
+                                html.Div(_ai_cron_input(), className="pt-3"),
+                                label="✨ AI",
+                                tab_id="ai",
+                            ),
+                            dbc.Tab(
+                                html.Div(
+                                    [
+                                        dbc.Label(
+                                            "Quartz cron expression (7 fields)",
+                                            className="small",
+                                        ),
+                                        dbc.Input(
+                                            id="sb-custom-cron",
+                                            value=cron,
+                                            placeholder="0 0 6 * * ?",
+                                            style={"font-family": "monospace"},
+                                        ),
+                                    ],
+                                    className="pt-3",
+                                ),
+                                label="Custom cron",
+                                tab_id="custom",
+                            ),
+                        ],
+                        className="mb-2",
+                    ),
                     dbc.Row(
                         [
                             dbc.Col(
-                                dbc.Input(
-                                    id="info-cron",
-                                    value=cron,
-                                    placeholder="0 0 6 * * ?",
-                                    style={"font-family": "monospace"},
-                                ),
+                                [
+                                    html.Div("Cron preview", className="text-muted small"),
+                                    html.Code(
+                                        id="info-cron-preview",
+                                        children=cron or "(none)",
+                                        className="d-block p-2 bg-light rounded",
+                                    ),
+                                ],
                                 md=8,
                             ),
                             dbc.Col(
-                                dbc.Button(
-                                    "Save Schedule",
-                                    id="info-cron-save",
-                                    color="primary",
-                                    className="w-100",
-                                ),
+                                [
+                                    dbc.Button(
+                                        "Save Schedule",
+                                        id="info-cron-save",
+                                        color="primary",
+                                        className="w-100 mb-1",
+                                    ),
+                                    dbc.Button(
+                                        "Clear",
+                                        id="info-cron-clear",
+                                        color="secondary",
+                                        outline=True,
+                                        className="w-100",
+                                    ),
+                                ],
                                 md=4,
                             ),
                         ],
-                        className="g-2",
+                        className="g-2 mt-2",
                     ),
+                    # Hidden store: the canonical cron the user will save.
+                    dcc.Store(id="info-cron-store", data=cron),
                     html.Div(id="info-run-output", className="mt-3"),
                     html.H6(
                         "Recent runs",

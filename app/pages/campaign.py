@@ -20,7 +20,7 @@ from app.components.step_forms import OP_LABELS, render_form_body
 from app.compiler import Pipeline, compile_pipeline, compile_pipeline_preview
 from app.compiler.pipeline import CompileError
 from app.config import SETTINGS
-from app.services import columns, metadata, runner, uc
+from app.services import ai_cron, columns, metadata, runner, uc
 
 dash.register_page(__name__, path_template="/campaign/<campaign_id>", name="Campaign")
 
@@ -732,21 +732,125 @@ def _run_now(_n, campaign_id, session, refresh):
     )
 
 
+# --- Schedule builder: visibility of conditional fields ----------------
+
+
+@callback(
+    Output("sb-hour-col", "style"),
+    Output("sb-dow-col", "style"),
+    Output("sb-dom-col", "style"),
+    Input("sb-frequency", "value"),
+    prevent_initial_call=False,
+)
+def _toggle_schedule_fields(frequency):
+    show = {"display": "block"}
+    hide = {"display": "none"}
+    if frequency == "hourly":
+        return hide, hide, hide
+    if frequency == "daily":
+        return show, hide, hide
+    if frequency == "weekly":
+        return show, show, hide
+    if frequency == "monthly":
+        return show, hide, show
+    return show, show, show
+
+
+# --- Schedule cron: derive from active tab -----------------------------
+
+
+@callback(
+    Output("info-cron-store", "data"),
+    Output("info-cron-preview", "children"),
+    Input("sb-tabs", "active_tab"),
+    Input("sb-frequency", "value"),
+    Input("sb-hour", "value"),
+    Input("sb-minute", "value"),
+    Input("sb-dow", "value"),
+    Input("sb-dom", "value"),
+    Input("sb-custom-cron", "value"),
+    Input("sb-ai-output", "children"),
+    State("info-cron-store", "data"),
+)
+def _derive_cron(active_tab, freq, hour, minute, dow, dom, custom, ai_output, current):
+    cron: str | None = current
+    try:
+        if active_tab == "builder":
+            cron = ai_cron.build_cron(
+                freq or "daily",
+                minute=minute or 0,
+                hour=hour or 0,
+                day_of_week=dow or "MON",
+                day_of_month=dom or 1,
+            )
+        elif active_tab == "custom":
+            cron = (custom or "").strip() or None
+        elif active_tab == "ai":
+            # AI tab cron is set when sb-ai-convert finishes; preserve current.
+            cron = current
+    except Exception:
+        cron = current
+    return cron, (cron or "(none)")
+
+
+# --- Schedule: AI text-to-cron --------------------------------------------
+
+
+@callback(
+    Output("sb-ai-output", "children"),
+    Output("info-cron-store", "data", allow_duplicate=True),
+    Output("info-cron-preview", "children", allow_duplicate=True),
+    Input("sb-ai-convert", "n_clicks"),
+    State("sb-ai-text", "value"),
+    prevent_initial_call=True,
+)
+def _ai_convert(_n, description):
+    if not (description or "").strip():
+        return (
+            dbc.Alert("Describe a schedule first.", color="warning", duration=3000),
+            no_update,
+            no_update,
+        )
+    try:
+        cron = ai_cron.text_to_cron(description)
+    except ai_cron.AiCronError as exc:
+        return (
+            dbc.Alert(f"AI conversion failed: {exc}", color="danger"),
+            no_update,
+            no_update,
+        )
+    return (
+        dbc.Alert(
+            ["Got it: ", html.Code(cron)], color="success", duration=4000
+        ),
+        cron,
+        cron,
+    )
+
+
+# --- Schedule: Save / Clear --------------------------------------------
+
+
 @callback(
     Output("info-run-output", "children", allow_duplicate=True),
     Output("campaign-refresh", "data", allow_duplicate=True),
     Input("info-cron-save", "n_clicks"),
-    State("info-cron", "value"),
+    Input("info-cron-clear", "n_clicks"),
+    State("info-cron-store", "data"),
     State("campaign-loaded-id", "data"),
     State("session-store", "data"),
     State("campaign-refresh", "data"),
     prevent_initial_call=True,
 )
-def _save_schedule(_n, cron, campaign_id, session, refresh):
+def _save_schedule(_save, _clear, cron, campaign_id, session, refresh):
     if not campaign_id:
         return no_update, no_update
+    triggered = ctx.triggered_id
     user = (session or {}).get("user_email", "demo@databricks.com")
-    cron = (cron or "").strip() or None
+    if triggered == "info-cron-clear":
+        cron = None
+    else:
+        cron = (cron or "").strip() or None
     metadata.update_campaign_schedule(campaign_id, cron)
     metadata.append_audit(campaign_id, user, "schedule_updated", {"cron": cron})
     msg = f"Schedule set: {cron}" if cron else "Schedule cleared."
