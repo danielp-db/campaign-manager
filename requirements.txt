@@ -7,3 +7,4 @@ pydantic>=2.7
 databricks-sdk>=0.36
 databricks-sql-connector>=3.4
 psycopg[binary]>=3.2
+sqlparse>=0.5

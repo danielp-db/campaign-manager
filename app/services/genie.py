@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import os
 
+import sqlparse
 from databricks.sdk import WorkspaceClient
 
 log = logging.getLogger(__name__)
@@ -11,6 +12,23 @@ log = logging.getLogger(__name__)
 
 class GenieError(RuntimeError):
     pass
+
+
+def format_sql(sql: str) -> str:
+    """Pretty-print SQL with reindent, uppercase keywords, 2-space indent.
+    Trailing ';' is stripped so the result is safe for our CTE compiler."""
+    cleaned = (sql or "").strip().rstrip(";").strip()
+    if not cleaned:
+        return ""
+    return sqlparse.format(
+        cleaned,
+        reindent=True,
+        keyword_case="upper",
+        identifier_case=None,
+        strip_comments=False,
+        indent_width=2,
+        wrap_after=80,
+    ).strip()
 
 
 def _space_id() -> str:
@@ -56,7 +74,7 @@ def ask(question: str) -> dict:
         )
 
     return {
-        "sql": sql.strip(),
+        "sql": format_sql(sql),
         "description": description or "",
         "title": title or "",
         "conversation_id": msg.conversation_id,
